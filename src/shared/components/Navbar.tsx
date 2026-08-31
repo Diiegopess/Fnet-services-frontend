@@ -37,6 +37,10 @@ export const Navbar: React.FC = () => {
                 Clientes
               </NavLink>
 
+              <NavLink to="/devices" className={navLinkClasses}>
+                Dispositivos
+              </NavLink>
+
               {/* Enlaces protegidos por RBAC exclusivos para Administradores */}
               {user.is_superuser && (
                 <>

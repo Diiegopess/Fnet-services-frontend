@@ -6,6 +6,7 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { UsersPage } from '../pages/UsersPage';
 import { AuditPage } from '../pages/AuditPage';
 import { ClientsPage } from '../pages/ClientsPage';
+import { DevicesPage } from '../pages/DevicesPage';
 import ProtectedRoute from './ProtectedRoute';
 
 export const AppRoutes: React.FC = () => {
@@ -32,6 +33,15 @@ export const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <ClientsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/devices"
+        element={
+          <ProtectedRoute>
+            <DevicesPage />
           </ProtectedRoute>
         }
       />

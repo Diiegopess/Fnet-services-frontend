@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../domains/auth/AuthContext';
-import { User, Users, FileText, ShieldCheck } from 'lucide-react';
+import { User, Users, FileText, ShieldCheck, Building2, Shield } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -35,40 +35,78 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Link
-          to="/users"
+          to="/clients"
           className="p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
         >
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <Users className="w-6 h-6" />
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+              <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Módulo de Usuarios</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Módulo de Clientes</h2>
               <p className="text-sm text-gray-500">
-                Consulta y gestiona las cuentas de usuario del sistema.
+                Gestiona las empresas cliente y asignación de técnicos.
               </p>
             </div>
           </div>
         </Link>
 
         <Link
-          to="/audit"
+          to="/devices"
           className="p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
         >
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-              <FileText className="w-6 h-6" />
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <Shield className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Logs de Auditoría</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Dispositivos FortiGate</h2>
               <p className="text-sm text-gray-500">
-                Supervisa eventos, accesos y exporta los registros en CSV.
+                Inventario de firewalls, sondeo de estado y particiones VDOM.
               </p>
             </div>
           </div>
         </Link>
+
+        {user?.is_superuser && (
+          <>
+            <Link
+              to="/users"
+              className="p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Módulo de Usuarios</h2>
+                  <p className="text-sm text-gray-500">
+                    Administra cuentas de usuario y roles RBAC.
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              to="/audit"
+              className="p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Logs de Auditoría</h2>
+                  <p className="text-sm text-gray-500">
+                    Inspección forense de eventos y accesos en el sistema.
+                  </p>
+                </div>
+              </div>
+            </Link>
+          </>
+        )}
       </div>
     </div>
   );
