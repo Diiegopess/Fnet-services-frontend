@@ -5,6 +5,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { UsersPage } from '../pages/UsersPage';
 import { AuditPage } from '../pages/AuditPage';
+import { ClientsPage } from '../pages/ClientsPage';
 import ProtectedRoute from './ProtectedRoute';
 
 export const AppRoutes: React.FC = () => {
@@ -17,7 +18,6 @@ export const AppRoutes: React.FC = () => {
         element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />}
       />
 
-      {/* Ruta autenticada base (cualquier usuario activo) */}
       <Route
         path="/dashboard"
         element={
@@ -27,7 +27,15 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
-      {/* Rutas administrativas exclusivas (is_superuser: true) */}
+      <Route
+        path="/clients"
+        element={
+          <ProtectedRoute>
+            <ClientsPage />
+          </ProtectedRoute>
+        }
+      />
+
       <Route
         path="/users"
         element={

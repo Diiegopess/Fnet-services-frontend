@@ -33,6 +33,10 @@ export const Navbar: React.FC = () => {
                 Dashboard
               </NavLink>
 
+              <NavLink to="/clients" className={navLinkClasses}>
+                Clientes
+              </NavLink>
+
               {/* Enlaces protegidos por RBAC exclusivos para Administradores */}
               {user.is_superuser && (
                 <>
@@ -50,7 +54,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center space-x-4">
             <div className="flex flex-col items-end">
               <span className="text-xs font-semibold text-gray-800">
-                {user.full_name}
+                {user.full_name || 'Usuario'}
               </span>
               <span className="text-[11px] text-gray-500 hidden sm:inline-block">
                 {user.email}
