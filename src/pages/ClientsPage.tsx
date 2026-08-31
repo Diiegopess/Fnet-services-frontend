@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useClients } from '../domains/clients/useClients';
 import { ClientsTable } from '../domains/clients/components/ClientsTable';
 import CreateClientModal from '../domains/clients/components/CreateClientModal';
+import AssignTechniciansModal from '../domains/clients/components/AssignTechniiciansModal';
 import Spinner from '../shared/components/Spinner';
+import type { Client } from '../domains/clients/client.types';
 
 export const ClientsPage: React.FC = () => {
   const {
     clients,
     loading,
     creating,
+    assigning,
     actionLoadingId,
     error,
     isCreateModalOpen,
@@ -17,7 +20,10 @@ export const ClientsPage: React.FC = () => {
     refetch,
     toggleClientStatus,
     removeClient,
+    assignTechnicians,
   } = useClients();
+
+  const [selectedClientForTechs, setSelectedClientForTechs] = useState<Client | null>(null);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -63,6 +69,7 @@ export const ClientsPage: React.FC = () => {
             clients={clients}
             actionLoadingId={actionLoadingId}
             onToggleStatus={toggleClientStatus}
+            onAssignTechnicians={(client) => setSelectedClientForTechs(client)}
             onDelete={(client) => {
               if (window.confirm(`¿Seguro que deseas eliminar al cliente "${client.name}"?`)) {
                 removeClient(client.id);
@@ -76,8 +83,19 @@ export const ClientsPage: React.FC = () => {
       <CreateClientModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onSubmit={addClient}
+        onSubmit={async (payload) => {
+          await addClient(payload);
+        }}
         loading={creating}
+      />
+
+      {/* Modal de Asignación de Técnicos */}
+      <AssignTechniciansModal
+        isOpen={Boolean(selectedClientForTechs)}
+        client={selectedClientForTechs}
+        onClose={() => setSelectedClientForTechs(null)}
+        onAssign={assignTechnicians}
+        loading={assigning}
       />
     </div>
   );
