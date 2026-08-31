@@ -18,7 +18,7 @@ export const UsersPage: React.FC = () => {
     addUser,
     refetch,
     toggleUserStatus,
-    toggleUserRole,
+    changeUserRole,
   } = useUsers();
 
   return (
@@ -66,7 +66,7 @@ export const UsersPage: React.FC = () => {
             currentUserId={user?.sub}
             actionLoadingId={actionLoadingId}
             onToggleStatus={toggleUserStatus}
-            onToggleRole={toggleUserRole}
+            onChangeRole={changeUserRole}
           />
         </div>
       )}

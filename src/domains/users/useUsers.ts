@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { User, UserUpdateAdminPayload, UserCreatePayload } from './user.types';
-import { fetchUsers, updateUserAdmin, createUser } from './userService';
+import { fetchUsers, updateUserAdmin, createUser, assignRolesToUser } from './userService';
 
 export const useUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -30,7 +30,7 @@ export const useUsers = () => {
       setCreating(true);
       setError(null);
       await createUser(payload);
-      await loadUsers(); // Refresca la tabla tras registrar
+      await loadUsers();
       setIsCreateModalOpen(false);
     } catch (err: any) {
       const msg =
@@ -64,12 +64,29 @@ export const useUsers = () => {
     }
   };
 
-  const toggleUserStatus = async (user: User) => {
-    return updateUser(user.id, { is_active: !user.is_active });
+  const changeUserRole = async (user: User, newRole: string) => {
+    try {
+      setActionLoadingId(user.id);
+      setError(null);
+      const updated = await assignRolesToUser(user.id, { role_names: [newRole] });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u))
+      );
+      return updated;
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.detail ||
+        err.message ||
+        'Error al asignar rol al usuario';
+      setError(msg);
+      throw err;
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
-  const toggleUserRole = async (user: User) => {
-    return updateUser(user.id, { is_superuser: !user.is_superuser });
+  const toggleUserStatus = async (user: User) => {
+    return updateUser(user.id, { is_active: !user.is_active });
   };
 
   useEffect(() => {
@@ -87,6 +104,6 @@ export const useUsers = () => {
     addUser,
     refetch: loadUsers,
     toggleUserStatus,
-    toggleUserRole,
+    changeUserRole,
   };
 };

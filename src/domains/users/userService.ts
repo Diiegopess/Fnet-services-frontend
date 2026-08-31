@@ -1,13 +1,18 @@
 import apiClient from '../../core/api/apiClient';
-import type { User, UserUpdateAdminPayload, UserCreatePayload } from './user.types';
+import type {
+  User,
+  UserUpdateAdminPayload,
+  UserCreatePayload,
+  AssignRolesPayload,
+} from './user.types';
 
 export async function createUser(payload: UserCreatePayload): Promise<User> {
-  const resp = await apiClient.post<User>('/users', payload);
+  const resp = await apiClient.post<User>('/users/', payload);
   return resp.data;
 }
 
 export async function fetchUsers(): Promise<User[]> {
-  const resp = await apiClient.get<User[]>('/users');
+  const resp = await apiClient.get<User[]>('/users/');
   return resp.data;
 }
 
@@ -21,5 +26,13 @@ export async function updateUserAdmin(
   payload: UserUpdateAdminPayload
 ): Promise<User> {
   const resp = await apiClient.patch<User>(`/users/${id}`, payload);
+  return resp.data;
+}
+
+export async function assignRolesToUser(
+  id: string,
+  payload: AssignRolesPayload
+): Promise<User> {
+  const resp = await apiClient.post<User>(`/users/${id}/roles`, payload);
   return resp.data;
 }
