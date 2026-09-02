@@ -54,7 +54,7 @@ export const DevicesTable: React.FC<DevicesTableProps> = ({
                 </td>
 
                 <td className="px-5 py-4 text-xs text-gray-600">
-                  <div className="font-semibold text-gray-800">v{d.fortios_version}</div>
+                  <div className="font-semibold text-gray-800">{d.fortios_version}</div>
                   <div className="font-mono text-gray-400 text-[11px]">
                     {d.serial_number || <span className="italic">Pendiente de Sync</span>}
                   </div>

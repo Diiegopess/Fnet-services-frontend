@@ -26,7 +26,7 @@ export const Navbar: React.FC = () => {
         <div className="flex justify-between h-16 items-center">
           <div className="flex items-center space-x-8">
             <span className="font-bold text-lg text-blue-600">
-              AppLogs
+              Diegopes-Services
             </span>
             <div className="flex space-x-2">
               <NavLink to="/dashboard" className={navLinkClasses}>

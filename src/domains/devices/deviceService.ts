@@ -4,6 +4,7 @@ import type {
   DeviceCreateRequest,
   DeviceResponse,
   DeviceUpdateRequest,
+  FortiOSVersionOption,
   TestConnectionRequest,
 } from './device.types';
 
@@ -17,6 +18,11 @@ export const deviceService = {
 
   async getDeviceById(id: string): Promise<DeviceResponse> {
     const response = await apiClient.get<DeviceResponse>(`/devices/${id}`);
+    return response.data;
+  },
+
+  async getSupportedVersions(): Promise<FortiOSVersionOption[]> {
+    const response = await apiClient.get<FortiOSVersionOption[]>('/devices/supported-versions');
     return response.data;
   },
 

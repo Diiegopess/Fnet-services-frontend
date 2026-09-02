@@ -59,3 +59,8 @@ export interface ConnectivityCheckResult {
   latency_ms?: number | null;
   error_message?: string | null;
 }
+
+export interface FortiOSVersionOption {
+  label: string;
+  value: string;
+}

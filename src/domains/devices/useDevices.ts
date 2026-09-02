@@ -4,12 +4,14 @@ import type {
   ConnectivityCheckResult,
   DeviceCreateRequest,
   DeviceResponse,
+  FortiOSVersionOption,
   TestConnectionRequest,
 } from './device.types';
 import { parseApiError } from '../../shared/utils/errorHandler';
 
 export function useDevices() {
   const [devices, setDevices] = useState<DeviceResponse[]>([]);
+  const [supportedVersions, setSupportedVersions] = useState<FortiOSVersionOption[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState<boolean>(false);
@@ -25,6 +27,22 @@ export function useDevices() {
       setError(parseApiError(err).message);
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const fetchSupportedVersions = useCallback(async () => {
+    try {
+      const versions = await deviceService.getSupportedVersions();
+      setSupportedVersions(versions);
+    } catch (err) {
+      // Fallback resiliente si falla la petición de metadatos
+      setSupportedVersions([
+        { label: 'FortiOS v7.4.x', value: '7.4' },
+        { label: 'FortiOS v7.2.x', value: '7.2' },
+        { label: 'FortiOS v7.0.x', value: '7.0' },
+        { label: 'FortiOS v6.4.x', value: '6.4' },
+        { label: 'Entorno Mock / Pruebas', value: 'mock' },
+      ]);
     }
   }, []);
 
@@ -80,16 +98,19 @@ export function useDevices() {
 
   useEffect(() => {
     fetchDevices();
-  }, [fetchDevices]);
+    fetchSupportedVersions();
+  }, [fetchDevices, fetchSupportedVersions]);
 
   return {
     devices,
+    supportedVersions,
     isLoading,
     error,
     isTesting,
     testResult,
     setTestResult,
     fetchDevices,
+    fetchSupportedVersions,
     createDevice,
     deleteDevice,
     testConnection,

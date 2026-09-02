@@ -9,6 +9,7 @@ import type { DeviceResponse } from '../domains/devices/device.types';
 export const DevicesPage: React.FC = () => {
   const {
     devices,
+    supportedVersions,
     isLoading,
     error,
     isTesting,
@@ -80,6 +81,7 @@ export const DevicesPage: React.FC = () => {
         }}
         onTestConnection={testConnection}
         clients={clients}
+        supportedVersions={supportedVersions}
         testingConnection={isTesting}
       />
     </div>

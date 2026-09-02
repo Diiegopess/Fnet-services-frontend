@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import type { DeviceCreateRequest, TestConnectionRequest, ConnectivityCheckResult } from '../device.types';
+import type {
+  DeviceCreateRequest,
+  TestConnectionRequest,
+  ConnectivityCheckResult,
+  FortiOSVersionOption,
+} from '../device.types';
 import type { Client } from '../../clients/client.types';
 
 export interface CreateDeviceModalProps {
@@ -8,6 +13,7 @@ export interface CreateDeviceModalProps {
   onSubmit: (payload: DeviceCreateRequest) => Promise<void>;
   onTestConnection: (payload: TestConnectionRequest) => Promise<ConnectivityCheckResult>;
   clients: Client[];
+  supportedVersions?: FortiOSVersionOption[];
   loading?: boolean;
   testingConnection?: boolean;
 }
@@ -18,6 +24,7 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
   onSubmit,
   onTestConnection,
   clients,
+  supportedVersions = [],
   loading = false,
   testingConnection = false,
 }) => {
@@ -139,14 +146,19 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Versión FortiOS</label>
-              <input
-                type="text"
+              <label className="block text-xs font-medium text-gray-700 mb-1">Versión FortiOS *</label>
+              <select
                 value={formData.fortios_version}
                 onChange={(e) => setFormData({ ...formData, fortios_version: e.target.value })}
-                placeholder="7.2"
-                className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all font-mono"
-              />
+                required
+                className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all bg-white"
+              >
+                {supportedVersions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
