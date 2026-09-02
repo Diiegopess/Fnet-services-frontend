@@ -19,6 +19,31 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
 }) => {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  // Helper para resolver la fecha desde múltiples propiedades posibles
+  const getLogDate = (log: AuditLog): string => {
+    const rawDate =
+      log.occurred_at ||
+      (log as unknown as Record<string, unknown>).created_at ||
+      (log as unknown as Record<string, unknown>).timestamp;
+
+    if (!rawDate || typeof rawDate !== 'string') return '—';
+
+    try {
+      return formatDate ? formatDate(rawDate) : rawDate;
+    } catch {
+      return rawDate;
+    }
+  };
+
+  // Helper para resolver el identificador del usuario
+  const getUserId = (log: AuditLog): string => {
+    return (
+      log.user_id ||
+      (log as unknown as Record<string, unknown>).actor_id ||
+      '—'
+    ) as string;
+  };
+
   // IntersectionObserver para detectar cuando el usuario llega al final
   useEffect(() => {
     if (!hasMore) return;
@@ -65,14 +90,14 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
                 {log.event_type}
               </span>
               <span className="text-[11px] text-gray-500 font-mono">
-                {formatDate ? formatDate(log.occurred_at) : log.occurred_at}
+                {getLogDate(log)}
               </span>
             </div>
 
             <div className="text-xs text-gray-600 space-y-1">
               <p className="truncate">
                 <span className="font-semibold text-gray-700">Usuario:</span>{' '}
-                <span className="font-mono text-gray-500">{log.user_id || '—'}</span>
+                <span className="font-mono text-gray-500">{getUserId(log)}</span>
               </p>
               <p>
                 <span className="font-semibold text-gray-700">IP:</span>{' '}
@@ -116,7 +141,7 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
                 className="hover:bg-blue-50/50 cursor-pointer transition-colors"
               >
                 <td className="px-4 py-3.5 whitespace-nowrap text-xs text-gray-500 font-mono">
-                  {formatDate ? formatDate(log.occurred_at) : log.occurred_at}
+                  {getLogDate(log)}
                 </td>
                 <td className="px-4 py-3.5 font-medium text-gray-900">
                   <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-mono border border-gray-200">
@@ -124,7 +149,7 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
                   </span>
                 </td>
                 <td className="px-4 py-3.5 text-xs font-mono text-gray-600">
-                  {log.user_id || '—'}
+                  {getUserId(log)}
                 </td>
                 <td className="px-4 py-3.5 text-xs font-mono text-gray-500">
                   {log.ip_address || '—'}
