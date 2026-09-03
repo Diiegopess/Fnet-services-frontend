@@ -3,6 +3,7 @@ import { useClients } from '../domains/clients/useClients';
 import { ClientsTable } from '../domains/clients/components/ClientsTable';
 import CreateClientModal from '../domains/clients/components/CreateClientModal';
 import AssignTechniciansModal from '../domains/clients/components/AssignTechniiciansModal';
+import ClientDevicesModal from '../domains/devices/components/ClientDevicesModal'; // Componente del modal
 import Spinner from '../shared/components/Spinner';
 import type { Client } from '../domains/clients/client.types';
 
@@ -24,6 +25,9 @@ export const ClientsPage: React.FC = () => {
   } = useClients();
 
   const [selectedClientForTechs, setSelectedClientForTechs] = useState<Client | null>(null);
+  
+  // 1. Estado para almacenar el cliente seleccionado a ver sus equipos
+  const [selectedClientForDevices, setSelectedClientForDevices] = useState<Client | null>(null);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -70,6 +74,8 @@ export const ClientsPage: React.FC = () => {
             actionLoadingId={actionLoadingId}
             onToggleStatus={toggleClientStatus}
             onAssignTechnicians={(client) => setSelectedClientForTechs(client)}
+            // 2. Pasar el handler para setear el cliente seleccionado
+            onViewDevices={(client) => setSelectedClientForDevices(client)}
             onDelete={(client) => {
               if (window.confirm(`¿Seguro que deseas eliminar al cliente "${client.name}"?`)) {
                 removeClient(client.id);
@@ -97,6 +103,15 @@ export const ClientsPage: React.FC = () => {
         onAssign={assignTechnicians}
         loading={assigning}
       />
+
+      {/* 3. Modal para Listar / Ver Equipos del Cliente */}
+      {selectedClientForDevices && (
+        <ClientDevicesModal
+          isOpen={Boolean(selectedClientForDevices)}
+          clientId={selectedClientForDevices.id}
+          onClose={() => setSelectedClientForDevices(null)}
+        />
+      )}
     </div>
   );
 };

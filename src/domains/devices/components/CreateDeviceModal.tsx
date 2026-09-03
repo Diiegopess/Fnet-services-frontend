@@ -31,11 +31,11 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
   const [formData, setFormData] = useState<DeviceCreateRequest>({
     name: '',
     host: '',
-    port: 443,
+    port: 8443, // Cambiado de 443 a 8443 para coincidir con tu entorno
     fortios_version: '7.2',
     api_token: '',
     has_vdom_enabled: false,
-    default_client_id: null,
+    client_id: null,
     is_active: true,
   });
 
@@ -44,20 +44,35 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
 
   if (!isOpen) return null;
 
+  // FUNCIÓN AUXILIAR: Extrae "7.2" a partir de "v7.2.4" o "FortiOS v7.2.x"
+  const parseFortiOSVersion = (rawVersion: string): string => {
+    if (rawVersion.includes('mock')) return 'mock';
+    const match = rawVersion.match(/\d+\.\d+/);
+    return match ? match[0] : '7.2';
+  };
+
   const handleTest = async () => {
     if (!formData.host.trim() || !formData.api_token.trim()) {
       setError('Host y API Token son requeridos para probar la conexión.');
       return;
     }
     setError(null);
-    const result = await onTestConnection({
-      host: formData.host.trim(),
-      port: Number(formData.port) || 443,
-      api_token: formData.api_token.trim(),
-    });
-    setTestResult(result);
-    if (result.detected_version) {
-      setFormData((prev) => ({ ...prev, fortios_version: result.detected_version || prev.fortios_version }));
+    try {
+      const result = await onTestConnection({
+        host: formData.host.trim(),
+        port: Number(formData.port) || 8443,
+        api_token: formData.api_token.trim(),
+      });
+      setTestResult(result);
+      
+      // Sanitizar la versión detectada ("v7.2.4" -> "7.2")
+      if (result.detected_version) {
+        const cleanVersion = parseFortiOSVersion(result.detected_version);
+        setFormData((prev) => ({ ...prev, fortios_version: cleanVersion }));
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al probar conexión';
+      setError(message);
     }
   };
 
@@ -67,24 +82,31 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
       setError('Nombre, Host y API Token son campos obligatorios.');
       return;
     }
-    if (!formData.has_vdom_enabled && !formData.default_client_id) {
+
+    if (!formData.has_vdom_enabled && !formData.client_id) {
       setError('En modo Standalone (sin VDOMs) debes seleccionar el Cliente propietario.');
       return;
     }
 
     try {
       setError(null);
-      await onSubmit({
+      
+      // Sanitización completa del payload antes de enviar a Axios / FastAPI
+      const cleanPayload: DeviceCreateRequest = {
         ...formData,
         name: formData.name.trim(),
         host: formData.host.trim(),
         api_token: formData.api_token.trim(),
-        port: Number(formData.port) || 443,
-        default_client_id: formData.has_vdom_enabled ? null : formData.default_client_id,
-      });
+        port: Number(formData.port) || 8443,
+        fortios_version: parseFortiOSVersion(formData.fortios_version ?? '7.2'), // <-- Solución al HTTP 422
+        client_id: formData.has_vdom_enabled ? null : (formData.client_id || null),
+      };
+
+      await onSubmit(cleanPayload);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Error al registrar el dispositivo FortiGate.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al registrar el dispositivo FortiGate.';
+      setError(message);
     }
   };
 
@@ -228,8 +250,8 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                   Cliente Asignado (Modo Standalone) *
                 </label>
                 <select
-                  value={formData.default_client_id || ''}
-                  onChange={(e) => setFormData({ ...formData, default_client_id: e.target.value || null })}
+                  value={formData.client_id || ''}
+                  onChange={(e) => setFormData({ ...formData, client_id: e.target.value || null })}
                   className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
                 >
                   <option value="">Seleccionar cliente...</option>

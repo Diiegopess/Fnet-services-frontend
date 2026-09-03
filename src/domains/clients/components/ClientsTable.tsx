@@ -7,6 +7,7 @@ interface ClientsTableProps {
   onToggleStatus?: (client: Client) => void;
   onEdit?: (client: Client) => void;
   onAssignTechnicians?: (client: Client) => void;
+  onViewDevices?: (client: Client) => void; // <-- Acción modular para cargar dispositivos
   onDelete?: (client: Client) => void;
 }
 
@@ -16,6 +17,7 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
   onToggleStatus,
   onEdit,
   onAssignTechnicians,
+  onViewDevices,
   onDelete,
 }) => {
   if (!clients || clients.length === 0) {
@@ -35,6 +37,7 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
             <th className="px-5 py-3.5">ID Fiscal</th>
             <th className="px-5 py-3.5">Contacto</th>
             <th className="px-5 py-3.5 text-center">Técnicos</th>
+            <th className="px-5 py-3.5 text-center">Dispositivos</th> {/* Nueva Columna */}
             <th className="px-5 py-3.5 text-center">Estado</th>
             <th className="px-5 py-3.5 text-right">Acciones</th>
           </tr>
@@ -73,6 +76,17 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-all cursor-pointer shadow-xs"
                   >
                     <span>{c.assigned_technicians.length} asignados</span>
+                  </button>
+                </td>
+
+                {/* Columna de Dispositivos */}
+                <td className="px-5 py-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => onViewDevices && onViewDevices(c)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer shadow-xs"
+                  >
+                    <span>Ver Equipos</span>
                   </button>
                 </td>
 

@@ -1,4 +1,4 @@
-import { apiClient } from '../../core/api/apiClient';
+import apiClient from '../../core/api/apiClient';
 import type {
   ConnectivityCheckResult,
   DeviceCreateRequest,
@@ -9,10 +9,12 @@ import type {
 } from './device.types';
 
 export const deviceService = {
-  async getDevices(skip = 0, limit = 50): Promise<DeviceResponse[]> {
-    const response = await apiClient.get<DeviceResponse[]>('/devices', {
-      params: { skip, limit },
-    });
+  async getDevices(skip = 0, limit = 50, clientId?: string): Promise<DeviceResponse[]> {
+    const params: Record<string, unknown> = { skip, limit };
+    if (clientId) {
+      params.client_id = clientId;
+    }
+    const response = await apiClient.get<DeviceResponse[]>('/devices', { params });
     return response.data;
   },
 
