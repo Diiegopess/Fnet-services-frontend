@@ -3,7 +3,8 @@ import { useDevices } from '../domains/devices/useDevices';
 import { useClients } from '../domains/clients/useClients';
 import DevicesTable from '../domains/devices/components/DevicesTable';
 import CreateDeviceModal from '../domains/devices/components/CreateDeviceModal';
-import { EditDeviceModal } from '../domains/devices/components/EditeDeviceModal';
+import EditDeviceModal from '../domains/devices/components/EditDeviceModal';
+import DeleteDeviceModal from '../domains/devices/components/DeleteDeviceModal';
 import { Shield, Plus } from 'lucide-react';
 import type { DeviceResponse, DeviceUpdateRequest } from '../domains/devices/device.types';
 import { deviceService } from '../domains/devices/deviceService';
@@ -26,9 +27,9 @@ export const DevicesPage: React.FC = () => {
   // Estados modales y loaders de acción
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceResponse | null>(null);
+  const [deletingDevice, setDeletingDevice] = useState<DeviceResponse | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // 1. Probar conexión de equipo existente (retorna booleano para cambiar color del botón)
   const handleTestConnection = async (device: DeviceResponse): Promise<boolean> => {
     try {
       const result = await deviceService.testExistingDeviceConnection(device.id);
@@ -38,7 +39,6 @@ export const DevicesPage: React.FC = () => {
     }
   };
 
-  // 2. Cambiar estado Activo / Inactivo
   const handleToggleStatus = async (device: DeviceResponse) => {
     setActionLoadingId(device.id);
     try {
@@ -48,18 +48,16 @@ export const DevicesPage: React.FC = () => {
     }
   };
 
-  // 3. Eliminar equipo
-  const handleDelete = async (device: DeviceResponse) => {
-    if (!window.confirm(`¿Seguro que deseas eliminar el firewall ${device.name}?`)) return;
+  const handleConfirmDelete = async (device: DeviceResponse) => {
     setActionLoadingId(device.id);
     try {
       await deleteDevice(device.id);
     } finally {
       setActionLoadingId(null);
+      setDeletingDevice(null);
     }
   };
 
-  // 4. Guardar cambios de edición
   const handleUpdateSubmit = async (id: string, payload: DeviceUpdateRequest) => {
     await updateDevice(id, payload);
     setEditingDevice(null);
@@ -105,12 +103,12 @@ export const DevicesPage: React.FC = () => {
             onTestConnection={handleTestConnection}
             onToggleStatus={handleToggleStatus}
             onEdit={(device) => setEditingDevice(device)}
-            onDelete={handleDelete}
+            onDelete={(device) => setDeletingDevice(device)}
           />
         )}
       </div>
 
-      {/* Modal de Creación */}
+      {/* Modales */}
       <CreateDeviceModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -124,12 +122,22 @@ export const DevicesPage: React.FC = () => {
         testingConnection={isTesting}
       />
 
-      {/* Modal de Edición */}
       <EditDeviceModal
         isOpen={!!editingDevice}
         device={editingDevice}
         onClose={() => setEditingDevice(null)}
         onSubmit={handleUpdateSubmit}
+        onTestConnection={testConnection}
+        onTestExistingConnection={(deviceId) => deviceService.testExistingDeviceConnection(deviceId)}
+        clients={clients}
+        testingConnection={isTesting}
+      />
+
+      <DeleteDeviceModal
+        isOpen={!!deletingDevice}
+        device={deletingDevice}
+        onClose={() => setDeletingDevice(null)}
+        onConfirm={handleConfirmDelete}
         clients={clients}
       />
     </div>
