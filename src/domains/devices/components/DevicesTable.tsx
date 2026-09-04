@@ -1,9 +1,17 @@
 import React from 'react';
 import type { DeviceResponse } from '../device.types';
-import { Shield, Layers, HardDrive } from 'lucide-react';
+import { Shield, Layers, HardDrive, Building2 } from 'lucide-react';
+
+// Si tienes una interfaz para Client, impórtala de client.types.ts
+interface ClientItem {
+  id: string;
+  name: string;
+  [key: string]: any;
+}
 
 interface DevicesTableProps {
   devices: DeviceResponse[];
+  clients?: ClientItem[]; // <-- Nueva prop para pasar el catálogo de clientes
   actionLoadingId?: string | null;
   onToggleStatus?: (device: DeviceResponse) => void;
   onDelete?: (device: DeviceResponse) => void;
@@ -12,6 +20,7 @@ interface DevicesTableProps {
 
 export const DevicesTable: React.FC<DevicesTableProps> = ({
   devices,
+  clients = [],
   actionLoadingId,
   onToggleStatus,
   onDelete,
@@ -25,12 +34,18 @@ export const DevicesTable: React.FC<DevicesTableProps> = ({
     );
   }
 
+  // Mapa rápido de ID -> Nombre de cliente para rendimiento O(1)
+  const clientMap = new Map<string, string>(
+    clients.map((c) => [c.id, c.name])
+  );
+
   return (
     <div className="overflow-visible">
       <table className="min-w-full text-left text-sm text-gray-700">
         <thead className="bg-gray-50 uppercase text-xs text-gray-500 font-semibold border-b border-gray-200">
           <tr>
             <th className="px-5 py-3.5">Dispositivo / Host</th>
+            <th className="px-5 py-3.5">Cliente</th> {/* <-- NUEVA COLUMNA */}
             <th className="px-5 py-3.5">FortiOS & Serial</th>
             <th className="px-5 py-3.5 text-center">Modo / VDOMs</th>
             <th className="px-5 py-3.5 text-center">Estado</th>
@@ -40,6 +55,8 @@ export const DevicesTable: React.FC<DevicesTableProps> = ({
         <tbody className="divide-y divide-gray-200">
           {devices.map((d) => {
             const isProcessing = actionLoadingId === d.id;
+            // Buscar nombre del cliente asignado al chasis
+            const clientName = d.client_id ? clientMap.get(d.client_id) : null;
 
             return (
               <tr key={d.id} className="hover:bg-gray-50/70 transition-colors">
@@ -51,6 +68,20 @@ export const DevicesTable: React.FC<DevicesTableProps> = ({
                   <div className="text-xs text-gray-400 font-mono mt-0.5">
                     {d.host}:{d.port}
                   </div>
+                </td>
+
+                {/* CELDA DE CLIENTE */}
+                <td className="px-5 py-4 text-xs font-medium text-gray-800">
+                  {clientName ? (
+                    <div className="flex items-center gap-1.5 text-gray-700 font-semibold">
+                      <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{clientName}</span>
+                    </div>
+                  ) : d.has_vdom_enabled ? (
+                    <span className="text-gray-400 italic">Multicliente (VDOMs)</span>
+                  ) : (
+                    <span className="text-gray-400 italic">Sin asignar</span>
+                  )}
                 </td>
 
                 <td className="px-5 py-4 text-xs text-gray-600">

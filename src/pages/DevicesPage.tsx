@@ -67,6 +67,7 @@ export const DevicesPage: React.FC = () => {
         ) : (
           <DevicesTable
             devices={devices}
+            clients={clients} 
             actionLoadingId={actionLoadingId}
             onDelete={handleDelete}
           />
