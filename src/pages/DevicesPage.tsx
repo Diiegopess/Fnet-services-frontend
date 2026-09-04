@@ -3,8 +3,10 @@ import { useDevices } from '../domains/devices/useDevices';
 import { useClients } from '../domains/clients/useClients';
 import DevicesTable from '../domains/devices/components/DevicesTable';
 import CreateDeviceModal from '../domains/devices/components/CreateDeviceModal';
+import { EditDeviceModal } from '../domains/devices/components/EditeDeviceModal';
 import { Shield, Plus } from 'lucide-react';
-import type { DeviceResponse } from '../domains/devices/device.types';
+import type { DeviceResponse, DeviceUpdateRequest } from '../domains/devices/device.types';
+import { deviceService } from '../domains/devices/deviceService';
 
 export const DevicesPage: React.FC = () => {
   const {
@@ -14,14 +16,39 @@ export const DevicesPage: React.FC = () => {
     error,
     isTesting,
     createDevice,
+    updateDevice,
     deleteDevice,
     testConnection,
   } = useDevices();
 
   const { clients } = useClients();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Estados modales y loaders de acción
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingDevice, setEditingDevice] = useState<DeviceResponse | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+  // 1. Probar conexión de equipo existente (retorna booleano para cambiar color del botón)
+  const handleTestConnection = async (device: DeviceResponse): Promise<boolean> => {
+    try {
+      const result = await deviceService.testExistingDeviceConnection(device.id);
+      return result.is_reachable;
+    } catch {
+      return false;
+    }
+  };
+
+  // 2. Cambiar estado Activo / Inactivo
+  const handleToggleStatus = async (device: DeviceResponse) => {
+    setActionLoadingId(device.id);
+    try {
+      await updateDevice(device.id, { is_active: !device.is_active });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // 3. Eliminar equipo
   const handleDelete = async (device: DeviceResponse) => {
     if (!window.confirm(`¿Seguro que deseas eliminar el firewall ${device.name}?`)) return;
     setActionLoadingId(device.id);
@@ -30,6 +57,12 @@ export const DevicesPage: React.FC = () => {
     } finally {
       setActionLoadingId(null);
     }
+  };
+
+  // 4. Guardar cambios de edición
+  const handleUpdateSubmit = async (id: string, payload: DeviceUpdateRequest) => {
+    await updateDevice(id, payload);
+    setEditingDevice(null);
   };
 
   return (
@@ -47,7 +80,7 @@ export const DevicesPage: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => setIsCreateModalOpen(true)}
           className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -67,23 +100,37 @@ export const DevicesPage: React.FC = () => {
         ) : (
           <DevicesTable
             devices={devices}
-            clients={clients} 
+            clients={clients}
             actionLoadingId={actionLoadingId}
+            onTestConnection={handleTestConnection}
+            onToggleStatus={handleToggleStatus}
+            onEdit={(device) => setEditingDevice(device)}
             onDelete={handleDelete}
           />
         )}
       </div>
 
+      {/* Modal de Creación */}
       <CreateDeviceModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
         onSubmit={async (data) => {
           await createDevice(data);
+          setIsCreateModalOpen(false);
         }}
         onTestConnection={testConnection}
         clients={clients}
         supportedVersions={supportedVersions}
         testingConnection={isTesting}
+      />
+
+      {/* Modal de Edición */}
+      <EditDeviceModal
+        isOpen={!!editingDevice}
+        device={editingDevice}
+        onClose={() => setEditingDevice(null)}
+        onSubmit={handleUpdateSubmit}
+        clients={clients}
       />
     </div>
   );

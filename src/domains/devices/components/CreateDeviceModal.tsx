@@ -24,14 +24,13 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
   onSubmit,
   onTestConnection,
   clients,
-  supportedVersions = [],
   loading = false,
   testingConnection = false,
 }) => {
   const [formData, setFormData] = useState<DeviceCreateRequest>({
     name: '',
     host: '',
-    port: 8443, // Cambiado de 443 a 8443 para coincidir con tu entorno
+    port: 8443,
     fortios_version: '7.2',
     api_token: '',
     has_vdom_enabled: false,
@@ -40,11 +39,12 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
   });
 
   const [testResult, setTestResult] = useState<ConnectivityCheckResult | null>(null);
+  const [detectedVersionLabel, setDetectedVersionLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  // FUNCIÓN AUXILIAR: Extrae "7.2" a partir de "v7.2.4" o "FortiOS v7.2.x"
+  // Extrae la versión limpia ("7.2") y mantiene la versión completa para mostrar en UI ("v7.2.4")
   const parseFortiOSVersion = (rawVersion: string): string => {
     if (rawVersion.includes('mock')) return 'mock';
     const match = rawVersion.match(/\d+\.\d+/);
@@ -64,11 +64,11 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
         api_token: formData.api_token.trim(),
       });
       setTestResult(result);
-      
-      // Sanitizar la versión detectada ("v7.2.4" -> "7.2")
-      if (result.detected_version) {
+
+      if (result.is_reachable && result.detected_version) {
         const cleanVersion = parseFortiOSVersion(result.detected_version);
         setFormData((prev) => ({ ...prev, fortios_version: cleanVersion }));
+        setDetectedVersionLabel(result.detected_version);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al probar conexión';
@@ -90,22 +90,22 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
 
     try {
       setError(null);
-      
-      // Sanitización completa del payload antes de enviar a Axios / FastAPI
+
       const cleanPayload: DeviceCreateRequest = {
         ...formData,
         name: formData.name.trim(),
         host: formData.host.trim(),
         api_token: formData.api_token.trim(),
         port: Number(formData.port) || 8443,
-        fortios_version: parseFortiOSVersion(formData.fortios_version ?? '7.2'), // <-- Solución al HTTP 422
-        client_id: formData.has_vdom_enabled ? null : (formData.client_id || null),
+        fortios_version: parseFortiOSVersion(formData.fortios_version ?? '7.2'),
+        client_id: formData.has_vdom_enabled ? null : formData.client_id || null,
       };
 
       await onSubmit(cleanPayload);
       onClose();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al registrar el dispositivo FortiGate.';
+      const message =
+        err instanceof Error ? err.message : 'Error al registrar el dispositivo FortiGate.';
       setError(message);
     }
   };
@@ -116,7 +116,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h3 className="text-base font-semibold text-gray-900">Registrar Firewall FortiGate</h3>
-            <p className="text-xs text-gray-500">Conecta un dispositivo físico o virtual mediante REST API</p>
+            <p className="text-xs text-gray-500">
+              Conecta un dispositivo físico o virtual mediante REST API
+            </p>
           </div>
           <button
             type="button"
@@ -144,7 +146,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
             >
               <span>
                 {testResult.is_reachable
-                  ? `Conexión exitosa. Versión: ${testResult.detected_version || 'Detectada'} | Latencia: ${testResult.latency_ms || 0}ms`
+                  ? `Conexión exitosa. Versión: ${
+                      testResult.detected_version || 'Detectada'
+                    } | Latencia: ${testResult.latency_ms || 0}ms`
                   : `Fallo de conexión: ${testResult.error_message || 'No alcanzable'}`}
               </span>
               {testResult.serial_number && (
@@ -157,7 +161,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
 
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Nombre Descriptivo *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Nombre Descriptivo *
+              </label>
               <input
                 type="text"
                 required
@@ -167,26 +173,39 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                 className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
               />
             </div>
+
+            {/* CAMPO DE VERSIÓN AUTO-DETECTADO (OPCIÓN B) */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Versión FortiOS *</label>
-              <select
-                value={formData.fortios_version}
-                onChange={(e) => setFormData({ ...formData, fortios_version: e.target.value })}
-                required
-                className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all bg-white"
-              >
-                {supportedVersions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Versión FortiOS
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  disabled
+                  readOnly
+                  value={
+                    detectedVersionLabel
+                      ? `${detectedVersionLabel} (Auto)`
+                      : testingConnection
+                      ? 'Detectando...'
+                      : 'Auto-detectar (Test)'
+                  }
+                  className={`w-full text-xs px-3 py-2 border rounded-lg font-medium transition-all ${
+                    detectedVersionLabel
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
+                      : 'bg-gray-100 text-gray-500 border-gray-200'
+                  }`}
+                />
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Host / IP / FQDN *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Host / IP / FQDN *
+              </label>
               <input
                 type="text"
                 required
@@ -209,7 +228,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">REST API Token *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              REST API Token *
+            </label>
             <div className="flex gap-2">
               <input
                 type="password"
@@ -234,7 +255,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-gray-800">Modo Multi-VDOM</span>
-                <p className="text-[11px] text-gray-500">Habilitar si el equipo particiona tráfico por VDOMs</p>
+                <p className="text-[11px] text-gray-500">
+                  Habilitar si el equipo particiona tráfico por VDOMs
+                </p>
               </div>
               <input
                 type="checkbox"
@@ -251,7 +274,9 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                 </label>
                 <select
                   value={formData.client_id || ''}
-                  onChange={(e) => setFormData({ ...formData, client_id: e.target.value || null })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, client_id: e.target.value || null })
+                  }
                   className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
                 >
                   <option value="">Seleccionar cliente...</option>

@@ -49,4 +49,12 @@ export const deviceService = {
     );
     return response.data;
   },
+
+  async testExistingDeviceConnection(id: string): Promise<ConnectivityCheckResult> {
+    const response = await apiClient.post<ConnectivityCheckResult>(
+      `/devices/${id}/test-connection`
+    );
+    return response.data;
+  },
 };
+

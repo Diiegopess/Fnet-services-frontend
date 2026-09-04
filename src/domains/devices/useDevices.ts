@@ -4,6 +4,7 @@ import type {
   ConnectivityCheckResult,
   DeviceCreateRequest,
   DeviceResponse,
+  DeviceUpdateRequest,
   FortiOSVersionOption,
   TestConnectionRequest,
 } from './device.types';
@@ -35,7 +36,6 @@ export function useDevices() {
       const versions = await deviceService.getSupportedVersions();
       setSupportedVersions(versions);
     } catch (err) {
-      // Fallback resiliente si falla la petición de metadatos
       setSupportedVersions([
         { label: 'FortiOS v7.4.x', value: '7.4' },
         { label: 'FortiOS v7.2.x', value: '7.2' },
@@ -53,6 +53,23 @@ export function useDevices() {
       const newDevice = await deviceService.createDevice(payload);
       setDevices((prev) => [newDevice, ...prev]);
       return newDevice;
+    } catch (err) {
+      const msg = parseApiError(err).message;
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // NUEVO: Método para actualizar firewall (PATCH)
+  const updateDevice = async (id: string, payload: DeviceUpdateRequest) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const updated = await deviceService.updateDevice(id, payload);
+      setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      return updated;
     } catch (err) {
       const msg = parseApiError(err).message;
       setError(msg);
@@ -112,6 +129,7 @@ export function useDevices() {
     fetchDevices,
     fetchSupportedVersions,
     createDevice,
+    updateDevice, // <-- Expuesto
     deleteDevice,
     testConnection,
   };
