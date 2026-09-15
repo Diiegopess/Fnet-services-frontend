@@ -8,6 +8,7 @@ import { AuditPage } from '../pages/AuditPage';
 import { ClientsPage } from '../pages/ClientsPage';
 import { DevicesPage } from '../pages/DevicesPage';
 import ProtectedRoute from './ProtectedRoute';
+import { HardeningPage } from '../pages/HardeningPage';
 
 export const AppRoutes: React.FC = () => {
   const { user } = useAuth();
@@ -68,7 +69,19 @@ export const AppRoutes: React.FC = () => {
         path="*"
         element={<Navigate to={user ? '/dashboard' : '/login'} replace />}
       />
+      <Route
+        path="/hardening"
+        element={
+          <ProtectedRoute>
+            <HardeningPage />
+          </ProtectedRoute>
+        }
+      />
+            
+
     </Routes>
+
+    
   );
 };
 

@@ -41,6 +41,11 @@ export const Navbar: React.FC = () => {
                 Dispositivos
               </NavLink>
 
+              {/* Enlace al Módulo de Hardening */}
+              <NavLink to="/hardening" className={navLinkClasses}>
+                Hardening
+              </NavLink>
+
               {/* Enlaces protegidos por RBAC exclusivos para Administradores */}
               {user.is_superuser && (
                 <>

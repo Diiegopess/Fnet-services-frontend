@@ -70,6 +70,24 @@ export const DashboardPage: React.FC = () => {
           </div>
         </Link>
 
+        {/* Módulo de Hardening */}
+        <Link
+          to="/hardening"
+          className="p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-amber-600 group-hover:text-white transition-colors">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Módulo de Hardening</h2>
+              <p className="text-sm text-gray-500">
+                Auditoría de políticas, cálculo de cumplimiento y perfiles CIS.
+              </p>
+            </div>
+          </div>
+        </Link>
+
         {user?.is_superuser && (
           <>
             <Link
