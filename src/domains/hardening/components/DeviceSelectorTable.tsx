@@ -8,6 +8,8 @@ export interface TargetDevice {
   target_type: 'DEVICE' | 'VDOM' | string;
   ip_address?: string;
   status?: string;
+  fos_version?: string; // ──► CAMBIO: Alineado a los perfiles de connectors
+  model?: string;       // Opcional: Modelo de FortiGate (ej. FG-100E)
 }
 
 interface DeviceSelectorTableProps {
@@ -44,6 +46,7 @@ export const DeviceSelectorTable: React.FC<DeviceSelectorTableProps> = ({
               <th className="p-3 text-center w-12"></th>
               <th className="p-3">Nombre / Hostname</th>
               <th className="p-3">Tipo Target</th>
+              <th className="p-3">Versión FortiOS</th>
               <th className="p-3">Dirección IP</th>
               <th className="p-3 text-center">Estado</th>
             </tr>
@@ -51,13 +54,13 @@ export const DeviceSelectorTable: React.FC<DeviceSelectorTableProps> = ({
           <tbody className="divide-y divide-gray-100 bg-white">
             {loading ? (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-sm text-gray-400">
+                <td colSpan={6} className="p-8 text-center text-sm text-gray-400">
                   Cargando catálogo de dispositivos...
                 </td>
               </tr>
             ) : devices.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-sm text-gray-400">
+                <td colSpan={6} className="p-8 text-center text-sm text-gray-400">
                   No hay dispositivos o VDOMs registrados en el catálogo.
                 </td>
               </tr>
@@ -83,10 +86,25 @@ export const DeviceSelectorTable: React.FC<DeviceSelectorTableProps> = ({
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                       />
                     </td>
-                    <td className="p-3 text-gray-900 font-medium">{device.name}</td>
                     <td className="p-3">
-                      <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-gray-100 text-gray-600">
+                      <p className="text-gray-900 font-medium">{device.name}</p>
+                      {device.model && (
+                        <p className="text-[10px] text-gray-400 font-mono">{device.model}</p>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                        device.target_type === 'VDOM' 
+                          ? 'bg-purple-100 text-purple-700' 
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
                         {device.target_type}
+                      </span>
+                    </td>
+                    {/* Nueva celda para Versión de FOS */}
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-blue-50 text-blue-700 border border-blue-200">
+                        {device.fos_version ? `v${device.fos_version}` : 'v7.0.x'}
                       </span>
                     </td>
                     <td className="p-3 font-mono text-xs text-gray-600">
