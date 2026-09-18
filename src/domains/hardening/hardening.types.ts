@@ -1,4 +1,4 @@
-// hardening.types.ts
+// src/domains/hardening/hardening.types.ts
 
 export const ExecutionType = {
   FULL_STANDARD: 'FULL_STANDARD',
@@ -10,6 +10,7 @@ export type ExecutionType = (typeof ExecutionType)[keyof typeof ExecutionType];
 
 export const FindingStatus = {
   PASSED: 'PASSED',
+  PARTIAL: 'PARTIAL',
   FAILED: 'FAILED',
   EXEMPT: 'EXEMPT',
   NOT_APPLICABLE: 'NOT_APPLICABLE',
@@ -35,6 +36,8 @@ export const OperatorType = {
 
 export type OperatorType = (typeof OperatorType)[keyof typeof OperatorType];
 
+export type ExportFormat = 'pdf' | 'docx';
+
 export interface DynamicConditionSchema {
   block_path?: string;
   field?: string;
@@ -45,7 +48,7 @@ export interface DynamicConditionSchema {
 
 export interface AuditExecutionPayload {
   device_id: string;
-  raw_config: string;
+  raw_config?: string;
   execution_type: ExecutionType;
   profile_id?: string;
   adhoc_rule_ids?: string[];
@@ -59,6 +62,7 @@ export interface Finding {
   rule_name?: string;
   category?: string;
   status: FindingStatus;
+  compliance_score?: number;
   severity: RuleSeverity;
   current_value?: string;
   raw_evidence?: string;
@@ -80,9 +84,25 @@ export interface AuditReport {
   total_failed: number;
   total_rules_evaluated: number;
   total_not_applicable?: number;
-  executed_at: string;
-  findings_data?: Finding[]; // Mapeo para alias del Backend
-  findings: Finding[];
+  executed_at?: string;
+  created_at?: string;
+  findings_data?: Finding[];
+  findings?: Finding[];
+}
+
+export interface AuditReportListItem {
+  id: string;
+  device_id: string;
+  device_name?: string;
+  execution_type: ExecutionType;
+  profile_id?: string;
+  profile_name?: string;
+  score: number;
+  total_passed: number;
+  total_failed: number;
+  total_not_applicable?: number;
+  executed_at?: string;
+  created_at?: string;
 }
 
 export interface RuleCatalogItem {
@@ -99,6 +119,12 @@ export interface RuleCatalogItem {
   condition_schema?: DynamicConditionSchema;
 }
 
+export interface RuleGroupResponse {
+  category: string;
+  count: number;
+  rules: RuleCatalogItem[];
+}
+
 export interface HardeningProfile {
   id: string;
   name: string;
@@ -108,22 +134,6 @@ export interface HardeningProfile {
   is_active: boolean;
   created_at: string;
   rules: RuleCatalogItem[];
-}
-
-// Agregar al final de hardening.types.ts
-
-export interface AuditReportListItem {
-  id: string;
-  device_id: string;
-  device_name?: string;
-  execution_type: ExecutionType;
-  profile_id?: string;
-  profile_name?: string;
-  score: number;
-  total_passed: number;
-  total_failed: number;
-  total_not_applicable?: number;
-  executed_at: string;
 }
 
 export interface FetchReportsParams {

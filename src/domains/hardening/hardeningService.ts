@@ -5,8 +5,10 @@ import type {
   AuditExecutionPayload,
   AuditReport,
   AuditReportListItem,
+  ExportFormat,
   FetchReportsParams,
   HardeningProfile,
+  RuleGroupResponse,
 } from './hardening.types';
 
 export const hardeningService = {
@@ -21,6 +23,12 @@ export const hardeningService = {
     const { data } = await apiClient.get<HardeningProfile[]>('/hardening/profiles', {
       params: standardVersion ? { standard_version: standardVersion } : undefined,
     });
+    return data;
+  },
+
+  // Obtiene el catálogo de reglas que el motor realmente tiene registradas
+  async getRulesCatalog(): Promise<RuleGroupResponse[]> {
+    const { data } = await apiClient.get<RuleGroupResponse[]>('/hardening/rules');
     return data;
   },
 
@@ -39,6 +47,21 @@ export const hardeningService = {
   // Obtiene el detalle de un reporte específico
   async getAuditReportById(reportId: string): Promise<AuditReport> {
     const { data } = await apiClient.get<AuditReport>(`/hardening/reports/${reportId}`);
+    return data;
+  },
+
+  // Exporta el reporte en formato binario (PDF o DOCX)
+  async exportReport(reportId: string, format: ExportFormat = 'pdf'): Promise<Blob> {
+    const { data } = await apiClient.get<Blob>(`/hardening/reports/${reportId}/export`, {
+      params: { format },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  // Crea un nuevo perfil personalizado AdHoc
+  async createProfile(payload: { name: string; rule_ids: string[] }): Promise<HardeningProfile> {
+    const { data } = await apiClient.post<HardeningProfile>('/hardening/profiles', payload);
     return data;
   },
 };

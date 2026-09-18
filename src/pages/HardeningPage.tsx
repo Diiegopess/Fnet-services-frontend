@@ -1,4 +1,4 @@
-// HardeningPage.tsx
+// src/pages/HardeningPage.tsx
 
 import React, { useEffect, useState } from 'react';
 import { useHardening } from '../domains/hardening/useHardening';
@@ -14,7 +14,6 @@ export const HardeningPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'profiles' | 'adhoc' | 'eval' | 'history'>('profiles');
 
   useEffect(() => {
-    // Solo invocamos fetchDevices si está disponible, useHardening se auto-ejecuta
     if (fetchDevices) {
       fetchDevices();
     }
@@ -98,9 +97,7 @@ export const HardeningPage: React.FC = () => {
       {!loading && activeTab === 'adhoc' && (
         <AdHocBuilder 
           catalogRules={catalogRules}
-          onSaveProfile={(profileName, ruleIds) => {
-            console.log('Guardando Perfil:', profileName, ruleIds);
-          }} 
+          devices={devices || []} 
         />
       )}
 

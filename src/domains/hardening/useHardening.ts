@@ -1,35 +1,47 @@
-// useHardening.ts
+// src/domains/hardening/useHardening.ts
 
-import { useCallback, useState, useEffect } from 'react';
-import { hardeningService } from './hardeningService';
+import { useCallback, useEffect, useState } from 'react';
+import { parseApiError } from '../../shared/utils/errorHandler';
+import { RuleSeverity } from './hardening.types';
 import type {
   AuditExecutionPayload,
   AuditReport,
+  ExportFormat,
   HardeningProfile,
   RuleCatalogItem,
 } from './hardening.types';
-import { parseApiError } from '../../shared/utils/errorHandler';
+import { hardeningService } from './hardeningService';
 
 export const useHardening = () => {
   const [report, setReport] = useState<AuditReport | null>(null);
   const [profiles, setProfiles] = useState<HardeningProfile[]>([]);
   const [catalogRules, setCatalogRules] = useState<RuleCatalogItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [exporting, setExporting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async (standardVersion?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const profilesData = await hardeningService.getProfiles(standardVersion);
+      const [profilesData, ruleGroups] = await Promise.all([
+        hardeningService.getProfiles(standardVersion),
+        hardeningService.getRulesCatalog(),
+      ]);
       setProfiles(profilesData);
 
-      const extractedRules = profilesData.flatMap((p) => p.rules || []);
-      const uniqueRules = Array.from(
-        new Map(extractedRules.map((r) => [r.id, r])).values()
-      );
+      const extractedRules = ruleGroups.flatMap((group) => group.rules || []);
 
-      setCatalogRules(uniqueRules);
+      // Indexar tanto por rule_id, code o id para evitar fallas en el map
+      const rulesMap = new Map<string, RuleCatalogItem>();
+      extractedRules.forEach((rule) => {
+        const key = rule.rule_id || rule.code || rule.id;
+        if (key && !rulesMap.has(key)) {
+          rulesMap.set(key, rule);
+        }
+      });
+
+      setCatalogRules(Array.from(rulesMap.values()));
     } catch (err: unknown) {
       const parsed = parseApiError(err);
       setError(parsed.message);
@@ -47,11 +59,38 @@ export const useHardening = () => {
     setError(null);
     try {
       const data = await hardeningService.runAudit(payload);
+      const rawFindings = data.findings?.length ? data.findings : data.findings_data || [];
 
-      // Normalización para garantizar la lista de hallazgos
+      const enrichedFindings = rawFindings.map((finding) => {
+        const matchedRule = catalogRules.find(
+          (r) =>
+            r.rule_id === finding.rule_id ||
+            r.code === finding.rule_id ||
+            r.id === finding.rule_id
+        );
+
+        const fallbackScore =
+          finding.status === 'PASSED' ? 100 : finding.status === 'PARTIAL' ? 50 : 0;
+
+        return {
+          ...finding,
+          compliance_score: finding.compliance_score ?? fallbackScore,
+          rule_name: finding.rule_name || matchedRule?.name || 'Sin título asignado',
+          reason:
+            finding.reason ||
+            matchedRule?.description ||
+            'No hay descripción detallada disponible para esta regla de evaluación.',
+          severity:
+            finding.severity ||
+            (matchedRule?.default_severity as RuleSeverity) ||
+            RuleSeverity.LOW,
+        };
+      });
+
       const normalizedReport: AuditReport = {
         ...data,
-        findings: data.findings || data.findings_data || [],
+        findings: enrichedFindings,
+        findings_data: enrichedFindings,
       };
 
       setReport(normalizedReport);
@@ -65,13 +104,40 @@ export const useHardening = () => {
     }
   };
 
+  const exportAuditReport = async (reportId: string, format: ExportFormat = 'pdf') => {
+    setExporting(true);
+    setError(null);
+    try {
+      const blobData = await hardeningService.exportReport(reportId, format);
+
+      // Crear enlace HTML invisible para forzar la descarga en el navegador
+      const blobUrl = window.URL.createObjectURL(blobData);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', `reporte_hardening_${reportId}.${format}`);
+      document.body.appendChild(link);
+      link.click();
+
+      // Limpieza de memoria
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: unknown) {
+      const parsed = parseApiError(err);
+      setError(parsed.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return {
     report,
     profiles,
     catalogRules,
     loading,
+    exporting,
     error,
     executeAudit,
+    exportAuditReport,
     refetch: fetchData,
   };
 };
