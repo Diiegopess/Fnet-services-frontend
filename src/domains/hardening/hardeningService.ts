@@ -12,13 +12,13 @@ import type {
 } from './hardening.types';
 
 export const hardeningService = {
-  // Ejecuta la auditoría
+  // Ejecuta la auditoría apuntando a la ruta real de FastAPI (/hardening/audit)
   async runAudit(payload: AuditExecutionPayload): Promise<AuditReport> {
     const { data } = await apiClient.post<AuditReport>('/hardening/audit', payload);
     return data;
   },
 
-  // Obtiene los perfiles
+  // Obtiene todos los perfiles (sin filtro obligatorio para que aparezcan siempre)
   async getProfiles(standardVersion?: string): Promise<HardeningProfile[]> {
     const { data } = await apiClient.get<HardeningProfile[]>('/hardening/profiles', {
       params: standardVersion ? { standard_version: standardVersion } : undefined,
@@ -26,13 +26,18 @@ export const hardeningService = {
     return data;
   },
 
-  // Obtiene el catálogo de reglas que el motor realmente tiene registradas
-  async getRulesCatalog(): Promise<RuleGroupResponse[]> {
-    const { data } = await apiClient.get<RuleGroupResponse[]>('/hardening/rules');
+  // Obtiene el catálogo de reglas desde PostgreSQL
+  async getRulesCatalog(standardVersion?: string, standard?: string): Promise<RuleGroupResponse[]> {
+    const { data } = await apiClient.get<RuleGroupResponse[]>('/hardening/rules', {
+      params: {
+        standard_version: standardVersion,
+        standard: standard,
+      },
+    });
     return data;
   },
 
-  // Obtiene el historial de reportes de auditoría
+  // Obtiene el historial de reportes
   async getAuditReports(params?: FetchReportsParams): Promise<AuditReportListItem[]> {
     const { data } = await apiClient.get<AuditReportListItem[]>('/hardening/reports', {
       params: {

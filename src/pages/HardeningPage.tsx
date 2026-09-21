@@ -17,7 +17,7 @@ export const HardeningPage: React.FC = () => {
     if (fetchDevices) {
       fetchDevices();
     }
-  }, []);
+  }, [fetchDevices]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -102,7 +102,11 @@ export const HardeningPage: React.FC = () => {
       )}
 
       {!loading && activeTab === 'eval' && (
-        <AuditRunner profiles={profiles} devices={devices || []} />
+        <AuditRunner 
+          profiles={profiles} 
+          devices={devices || []} 
+          catalogRules={catalogRules} 
+        />
       )}
 
       {!loading && activeTab === 'history' && (

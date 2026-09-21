@@ -12,7 +12,7 @@ import type {
 } from './hardening.types';
 import { hardeningService } from './hardeningService';
 
-export const useHardening = () => {
+export const useHardening = (initialStandardVersion: string = 'v1.0.1') => {
   const [report, setReport] = useState<AuditReport | null>(null);
   const [profiles, setProfiles] = useState<HardeningProfile[]>([]);
   const [catalogRules, setCatalogRules] = useState<RuleCatalogItem[]>([]);
@@ -24,19 +24,23 @@ export const useHardening = () => {
     setLoading(true);
     setError(null);
     try {
+      const activeVersion = standardVersion || initialStandardVersion;
+      
       const [profilesData, ruleGroups] = await Promise.all([
-        hardeningService.getProfiles(standardVersion),
-        hardeningService.getRulesCatalog(),
+        hardeningService.getProfiles(activeVersion),
+        hardeningService.getRulesCatalog(activeVersion),
       ]);
-      setProfiles(profilesData);
+      
+      setProfiles(profilesData || []);
 
-      const extractedRules = ruleGroups.flatMap((group) => group.rules || []);
+      const extractedRules = (ruleGroups || []).flatMap((group) => group.rules || []);
 
-      // Indexar tanto por rule_id, code o id para evitar fallas en el map
       const rulesMap = new Map<string, RuleCatalogItem>();
       extractedRules.forEach((rule) => {
-        const key = rule.rule_id || rule.code || rule.id;
-        if (key && !rulesMap.has(key)) {
+        const key = rule.standard_version 
+          ? `${rule.id}_${rule.standard_version}` 
+          : rule.id;
+        if (!rulesMap.has(key)) {
           rulesMap.set(key, rule);
         }
       });
@@ -48,7 +52,7 @@ export const useHardening = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initialStandardVersion]);
 
   useEffect(() => {
     fetchData();
@@ -58,15 +62,20 @@ export const useHardening = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await hardeningService.runAudit(payload);
+      const normalizedPayload: AuditExecutionPayload = {
+        ...payload,
+        standard_version: payload.standard_version || initialStandardVersion,
+      };
+
+      const data = await hardeningService.runAudit(normalizedPayload);
       const rawFindings = data.findings?.length ? data.findings : data.findings_data || [];
 
       const enrichedFindings = rawFindings.map((finding) => {
         const matchedRule = catalogRules.find(
           (r) =>
-            r.rule_id === finding.rule_id ||
-            r.code === finding.rule_id ||
-            r.id === finding.rule_id
+            r.id === finding.rule_id &&
+            (!normalizedPayload.standard_version ||
+              r.standard_version === normalizedPayload.standard_version)
         );
 
         const fallbackScore =
@@ -75,15 +84,13 @@ export const useHardening = () => {
         return {
           ...finding,
           compliance_score: finding.compliance_score ?? fallbackScore,
-          rule_name: finding.rule_name || matchedRule?.name || 'Sin título asignado',
-          reason:
-            finding.reason ||
-            matchedRule?.description ||
-            'No hay descripción detallada disponible para esta regla de evaluación.',
+          rule_name: finding.rule_name || matchedRule?.name || finding.rule_id,
+          expected_value: finding.expected_value || 'Conformidad con política CIS',
+          remediation_cmd: finding.remediation_cmd || matchedRule?.description,
           severity:
             finding.severity ||
             (matchedRule?.default_severity as RuleSeverity) ||
-            RuleSeverity.LOW,
+            RuleSeverity.MEDIUM,
         };
       });
 
@@ -109,16 +116,12 @@ export const useHardening = () => {
     setError(null);
     try {
       const blobData = await hardeningService.exportReport(reportId, format);
-
-      // Crear enlace HTML invisible para forzar la descarga en el navegador
       const blobUrl = window.URL.createObjectURL(blobData);
       const link = document.createElement('a');
       link.href = blobUrl;
       link.setAttribute('download', `reporte_hardening_${reportId}.${format}`);
       document.body.appendChild(link);
       link.click();
-
-      // Limpieza de memoria
       link.parentNode?.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (err: unknown) {

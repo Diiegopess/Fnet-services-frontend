@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// src/domains/hardening/components/AdHocBuilder.tsx
+
+import React, { useState, useMemo, useCallback } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
 import { ExecutionType } from '../hardening.types';
 import { useHardening } from '../useHardening';
@@ -16,6 +18,7 @@ interface AdHocBuilderProps {
 
 type SortField = 'rule_id' | 'status';
 type SortDirection = 'asc' | 'desc';
+type ExpandedTab = 'details' | 'remediation';
 
 export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   catalogRules = [],
@@ -29,21 +32,13 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const [localError, setLocalError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
-  // Estados para el manejo de ordenamiento en la tabla
+  // Estados para ordenamiento en la tabla
   const [sortField, setSortField] = useState<SortField>('rule_id');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
-
-  // Modales de Detalle de Regla y Remediación
-  const [activeRemediation, setActiveRemediation] = useState<Finding | null>(null);
-  const [copiedRemediation, setCopiedRemediation] = useState<boolean>(false);
-  const [selectedRuleDetail, setSelectedRuleDetail] = useState<{
-    rule_id: string;
-    rule_name?: string;
-    severity?: string;
-    description?: string;
-  } | null>(null);
+  // Control de acordeón desplegable en línea por fila
+  const [expandedRows, setExpandedRows] = useState<Record<string, ExpandedTab | null>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const {
     executeAudit,
@@ -56,8 +51,8 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   // Cálculo memoizado de reglas disponibles
   const availableRules = useMemo(() => {
     if (selectedRules.length === 0) return catalogRules;
-    const selectedIds = new Set(selectedRules.map((r) => r.id));
-    return catalogRules.filter((r) => !selectedIds.has(r.id));
+    const selectedIds = new Set(selectedRules.map((r) => `${r.id}_${r.standard_version || 'v1.0.0'}`));
+    return catalogRules.filter((r) => !selectedIds.has(`${r.id}_${r.standard_version || 'v1.0.0'}`));
   }, [catalogRules, selectedRules]);
 
   // Agrupación memoizada de las reglas disponibles
@@ -73,27 +68,14 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     return groups;
   }, [availableRules]);
 
-  // Cierre de modales con la tecla Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedRuleDetail(null);
-        setActiveRemediation(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   const addRule = useCallback((rule: RuleCatalogItem) => {
     setSelectedRules((prev) => [...prev, rule]);
   }, []);
 
   const removeRule = useCallback((rule: RuleCatalogItem) => {
-    setSelectedRules((prev) => prev.filter((r) => r.id !== rule.id));
+    setSelectedRules((prev) => prev.filter((r) => !(r.id === rule.id && r.standard_version === rule.standard_version)));
   }, []);
 
-  // Manejador del cambio de ordenamiento
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -103,11 +85,21 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     }
   };
 
-  const toggleDetail = (key: string) => {
-    setExpandedDetails((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  // Alternar acordeón desplegable en línea
+  const toggleRowAccordion = (rowKey: string, tab: ExpandedTab) => {
+    setExpandedRows((prev) => {
+      const currentTab = prev[rowKey];
+      if (currentTab === tab) {
+        return { ...prev, [rowKey]: null };
+      }
+      return { ...prev, [rowKey]: tab };
+    });
+  };
+
+  const handleCopyCmd = (cmd: string, rowKey: string) => {
+    navigator.clipboard.writeText(cmd);
+    setCopiedId(rowKey);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   // Ejecución Ad-hoc directa
@@ -116,14 +108,18 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     setLocalError(null);
 
     try {
+      // Tomamos la versión del primer elemento o fallback a v1.0.0
+      const activeVersion = selectedRules[0]?.standard_version || 'v1.0.0';
+
       const result = await executeAudit({
         device_id: selectedDevice,
         raw_config: '',
         execution_type: ExecutionType.CUSTOM_ADHOC,
         adhoc_rule_ids: selectedRules.map((r) => r.id),
+        standard_version: activeVersion,
       });
       setReport(result);
-      setExpandedDetails({});
+      setExpandedRows({});
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al ejecutar auditoría Ad-hoc';
       setLocalError(msg);
@@ -140,23 +136,13 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     }
   };
 
-  const handleCopyRemediation = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopiedRemediation(true);
-      setTimeout(() => setCopiedRemediation(false), 2000);
-    } catch (err) {
-      console.error('Error al copiar al portapapeles', err);
-    }
-  };
-
   const activeError = localError || hookError;
   const allFindings = useMemo(
     () => (report?.findings?.length ? report.findings : report?.findings_data || []),
     [report]
   );
 
-  // Cálculo del porcentaje de cumplimiento TOTAL
+  // Cálculo del porcentaje de cumplimiento total
   const totalComplianceScore = useMemo(() => {
     if (!report) return 0;
     if (report.score !== undefined && report.score !== null) {
@@ -168,7 +154,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     return Math.round((passed / total) * 100);
   }, [report, allFindings]);
 
-  // Filtrado y Ordenamiento Combinado
+  // Filtrado y Ordenamiento
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
@@ -267,13 +253,13 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
             ) : (
               selectedRules.map((rule) => (
                 <div
-                  key={rule.id}
+                  key={`${rule.id}_${rule.standard_version}`}
                   onClick={() => removeRule(rule)}
                   className="p-3 bg-white border border-blue-200 hover:border-red-300 rounded-lg shadow-2xs flex justify-between items-center cursor-pointer transition-all hover:bg-red-50/40 group"
                 >
                   <div className="flex items-center gap-3">
                     <span className="font-mono font-bold text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                      {rule.rule_id || rule.code || rule.id.substring(0, 8)}
+                      {rule.id}
                     </span>
                     <div>
                       <p className="text-xs font-semibold text-gray-800">
@@ -314,12 +300,12 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {rulesGroup.map((rule) => (
                     <div
-                      key={rule.id}
+                      key={`${rule.id}_${rule.standard_version}`}
                       onClick={() => addRule(rule)}
                       className="p-2 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-md flex justify-between items-center cursor-pointer transition-colors"
                     >
                       <span className="font-mono text-xs font-bold text-gray-700">
-                        {rule.rule_id || rule.code || rule.id.substring(0, 8)}
+                        {rule.id}
                       </span>
                       <span className="text-xs text-gray-600 truncate max-w-[220px]">
                         {rule.name}
@@ -409,7 +395,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
           </div>
 
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
-            <table className="w-full text-left text-sm text-gray-600">
+            <table className="w-full text-left text-sm text-gray-600 border-collapse">
               <thead className="bg-gray-50 text-xs text-gray-700 uppercase border-b select-none">
                 <tr>
                   <th
@@ -439,7 +425,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                     </div>
                   </th>
                   <th className="px-4 py-3">Cumplimiento</th>
-                  <th className="px-4 py-3">Detalle</th>
+                  <th className="px-4 py-3">Detalle / Evidencia</th>
                   <th className="px-4 py-3">Valor Esperado</th>
                   <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
@@ -450,214 +436,184 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                   const ruleCompliance = finding.compliance_score ?? (isPassed ? 100 : 0);
 
                   const matchedRule = catalogRules.find(
-                    (r) => r.id === finding.rule_id || r.rule_id === finding.rule_id
+                    (r) => r.id === finding.rule_id
                   );
-                  const ruleName = finding.rule_name || matchedRule?.name;
-                  const ruleDesc = matchedRule?.description || finding.reason;
+                  const ruleName = finding.rule_name || matchedRule?.name || finding.rule_id;
+                  const ruleDesc = matchedRule?.description || finding.reason || 'Sin descripción disponible';
+                  const ruleSeverity = finding.severity || matchedRule?.default_severity || 'MEDIUM';
 
                   const rowKey = `${finding.rule_id}-${idx}`;
-                  const isExpanded = !!expandedDetails[rowKey];
-                  const detailText = finding.current_value || 'N/A';
+                  const activeTab = expandedRows[rowKey] || null;
 
                   return (
-                    <tr key={rowKey} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 align-top">
-                        <button
-                          onClick={() =>
-                            setSelectedRuleDetail({
-                              rule_id: finding.rule_id,
-                              rule_name: ruleName,
-                              severity: finding.severity,
-                              description: ruleDesc,
-                            })
-                          }
-                          className="font-mono font-bold text-blue-600 hover:text-blue-800 text-xs underline decoration-dotted underline-offset-2 cursor-pointer transition-colors"
-                          title="Haz clic para ver el detalle de la regla"
-                        >
-                          {finding.rule_id}
-                        </button>
-                      </td>
-
-                      <td className="px-4 py-3 align-top">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
-                            isPassed
-                              ? 'bg-green-100 text-green-800 border border-green-300'
-                              : 'bg-red-100 text-red-800 border border-red-300'
-                          }`}
-                        >
-                          {finding.status}
-                        </span>
-                      </td>
-
-                      {/* Cumplimiento */}
-                      <td className="px-4 py-3 align-top">
-                        <span
-                          className={`font-mono text-xs font-bold ${
-                            ruleCompliance === 100 ? 'text-green-700' : 'text-red-600'
-                          }`}
-                        >
-                          {ruleCompliance}
-                        </span>
-                      </td>
-
-                      {/* DETALLE: muestra tres renglones y permite expandir el contenido completo */}
-                      <td className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs">
-                        <div
-                          onClick={() => toggleDetail(rowKey)}
-                          className={`break-words whitespace-pre-wrap cursor-pointer hover:text-blue-600 transition-colors ${
-                            isExpanded ? '' : 'line-clamp-3'
-                          }`}
-                          title="Haz clic para expandir o contraer"
-                        >
-                          {detailText}
-                        </div>
-                      </td>
-
-                      {/* VALOR ESPERADO */}
-                      <td className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words">
-                        {finding.expected_value || 'N/A'}
-                      </td>
-
-                      <td className="px-4 py-3 align-top text-right">
-                        {!isPassed && finding.remediation_cmd && (
+                    <React.Fragment key={rowKey}>
+                      <tr className={`transition-colors ${activeTab ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
+                        {/* ID interactivo con indicador de acordeón */}
+                        <td className="px-4 py-3 align-top">
                           <button
-                            onClick={() => setActiveRemediation(finding)}
-                            className="px-3 py-1 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+                            onClick={() => toggleRowAccordion(rowKey, 'details')}
+                            className="font-mono font-bold text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1.5 cursor-pointer transition-colors group"
+                            title="Haz clic para desplegar o contraer el objetivo de la regla"
                           >
-                            Remediación
+                            <span className="text-gray-400 group-hover:text-blue-600 transition-transform">
+                              {activeTab === 'details' ? '▼' : '▶'}
+                            </span>
+                            <span className="underline decoration-dotted underline-offset-2">
+                              {finding.rule_id}
+                            </span>
                           </button>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+
+                        {/* Estado */}
+                        <td className="px-4 py-3 align-top">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
+                              isPassed
+                                ? 'bg-green-100 text-green-800 border border-green-300'
+                                : 'bg-red-100 text-red-800 border border-red-300'
+                            }`}
+                          >
+                            {finding.status}
+                          </span>
+                        </td>
+
+                        {/* Cumplimiento numérico */}
+                        <td className="px-4 py-3 align-top">
+                          <span
+                            className={`font-mono text-xs font-bold ${
+                              ruleCompliance === 100 ? 'text-green-700' : 'text-red-600'
+                            }`}
+                          >
+                            {ruleCompliance}%
+                          </span>
+                        </td>
+
+                        {/* Detalle Actual */}
+                        <td className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap">
+                          {finding.current_value || 'N/A'}
+                        </td>
+
+                        {/* Valor Esperado */}
+                        <td className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words">
+                          {finding.expected_value || 'N/A'}
+                        </td>
+
+                        {/* Remediación interactiva */}
+                        <td className="px-4 py-3 align-top text-right">
+                          {!isPassed && finding.remediation_cmd && (
+                            <button
+                              onClick={() => toggleRowAccordion(rowKey, 'remediation')}
+                              className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
+                                activeTab === 'remediation'
+                                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                                  : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
+                              }`}
+                            >
+                              <span>Remediación</span>
+                              <span className="text-xs">
+                                {activeTab === 'remediation' ? '▲' : '▼'}
+                              </span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* FILA EXPANDIDA EN LÍNEA (ACORDEÓN) */}
+                      {activeTab && (
+                        <tr className="bg-slate-50/80 border-b border-gray-200">
+                          <td colSpan={6} className="px-6 py-4">
+                            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-inner space-y-4">
+                              <div className="flex items-center justify-between border-b pb-3">
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => toggleRowAccordion(rowKey, 'details')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                                      activeTab === 'details'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    Detalle del Control
+                                  </button>
+                                  {finding.remediation_cmd && (
+                                    <button
+                                      onClick={() => toggleRowAccordion(rowKey, 'remediation')}
+                                      className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                                        activeTab === 'remediation'
+                                          ? 'bg-amber-600 text-white'
+                                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                      }`}
+                                    >
+                                      Guía de Remediación
+                                    </button>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() => setExpandedRows((prev) => ({ ...prev, [rowKey]: null }))}
+                                  className="text-xs text-gray-400 hover:text-gray-700 cursor-pointer flex items-center gap-1 font-medium"
+                                >
+                                  Contraer ✕
+                                </button>
+                              </div>
+
+                              {/* Contenido: DETALLES */}
+                              {activeTab === 'details' && (
+                                <div className="space-y-3 text-xs">
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-mono bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">
+                                      {finding.rule_id}
+                                    </span>
+                                    <h5 className="font-bold text-gray-900 text-sm">{ruleName}</h5>
+                                    <span className="ml-auto uppercase text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
+                                      Severidad: {ruleSeverity}
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-semibold text-gray-500 uppercase tracking-wider mb-1 text-[11px]">
+                                      Descripción y Objetivo de Auditoría:
+                                    </p>
+                                    <p className="text-gray-700 leading-relaxed bg-gray-50 p-3 rounded border border-gray-200 text-xs">
+                                      {ruleDesc}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Contenido: REMEDIACIÓN */}
+                              {activeTab === 'remediation' && finding.remediation_cmd && (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-bold text-gray-700">
+                                      Comandos CLI FortiOS para corrección:
+                                    </p>
+                                    <button
+                                      onClick={() => handleCopyCmd(finding.remediation_cmd!, rowKey)}
+                                      className="px-3 py-1 text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors flex items-center gap-1 cursor-pointer border border-blue-200"
+                                    >
+                                      {copiedId === rowKey ? (
+                                        <span className="text-green-600 font-bold">✓ Copiado al portapapeles</span>
+                                      ) : (
+                                        <span>Copiar Comandos</span>
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  <div className="p-3 bg-gray-900 text-amber-300 font-mono text-xs rounded-lg overflow-x-auto border border-gray-800 shadow-inner">
+                                    <pre className="whitespace-pre-wrap leading-relaxed">{finding.remediation_cmd}</pre>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Detalle de Regla */}
-      {selectedRuleDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-gray-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <span className="font-mono font-bold text-sm bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                {selectedRuleDetail.rule_id}
-              </span>
-              <button
-                onClick={() => setSelectedRuleDetail(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-200/50 transition-colors cursor-pointer"
-                aria-label="Cerrar modal"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                  Nombre de la Regla
-                </label>
-                <h4 className="text-base font-bold text-gray-900">
-                  {selectedRuleDetail.rule_name || 'Sin título asignado'}
-                </h4>
-              </div>
-
-              {selectedRuleDetail.severity && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                    Nivel de Severidad
-                  </label>
-                  <span className="inline-block text-xs uppercase font-bold px-2.5 py-1 rounded bg-gray-100 text-gray-700 border border-gray-200">
-                    {selectedRuleDetail.severity}
-                  </span>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                  Descripción / Objetivo
-                </label>
-                <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
-                  {selectedRuleDetail.description || 'No hay descripción detallada disponible.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end px-6 py-3 bg-gray-50 border-t border-gray-100">
-              <button
-                onClick={() => setSelectedRuleDetail(null)}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
-              >
-                Entendido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Remediación */}
-      {activeRemediation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-gray-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <div>
-                <h3 className="text-base font-bold text-gray-900">
-                  Guía de Remediación — <span className="font-mono text-blue-600">{activeRemediation.rule_id}</span>
-                </h3>
-                {activeRemediation.rule_name && (
-                  <p className="text-xs font-semibold text-gray-700 mt-0.5">{activeRemediation.rule_name}</p>
-                )}
-              </div>
-              <button
-                onClick={() => setActiveRemediation(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-200/50 transition-colors cursor-pointer"
-                aria-label="Cerrar modal"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg text-xs">
-                <div>
-                  <span className="font-semibold text-gray-500 block">Detalle:</span>
-                  <span className="font-mono text-gray-800">{activeRemediation.current_value || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-gray-500 block">Valor Esperado:</span>
-                  <span className="font-mono text-gray-800">{activeRemediation.expected_value || 'N/A'}</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-gray-700">Comandos CLI de Configuración:</label>
-                  {activeRemediation.remediation_cmd && (
-                    <button
-                      onClick={() => handleCopyRemediation(activeRemediation.remediation_cmd!)}
-                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedRemediation ? <span className="text-green-600 font-bold">✓ Copiado</span> : <span>Copiar Comandos</span>}
-                    </button>
-                  )}
-                </div>
-                <div className="p-4 bg-gray-900 text-amber-300 font-mono text-xs rounded-lg overflow-x-auto max-h-80 border border-gray-800 shadow-inner">
-                  <pre className="whitespace-pre-wrap leading-relaxed">{activeRemediation.remediation_cmd}</pre>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end px-6 py-3 bg-gray-50 border-t border-gray-100">
-              <button
-                onClick={() => setActiveRemediation(null)}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
           </div>
         </div>
       )}
