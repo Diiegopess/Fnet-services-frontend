@@ -10,6 +10,7 @@ import {
   ExecutionType,
 } from '../hardening.types';
 import { useHardening } from '../useHardening';
+import { compareRuleIds } from '../ruleOrdering';
 
 interface Device {
   id: string;
@@ -141,14 +142,11 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
       return f.status === filterStatus;
     });
 
-    return filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       let comparison = 0;
 
       if (sortField === 'rule_id') {
-        comparison = (a.rule_id || '').localeCompare(b.rule_id || '', undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        });
+        comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
         comparison = (a.status || '').localeCompare(b.status || '');
       }

@@ -4,6 +4,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
 import { ExecutionType } from '../hardening.types';
 import { useHardening } from '../useHardening';
+import { compareRuleIds } from '../ruleOrdering';
 
 interface Device {
   id: string;
@@ -53,7 +54,9 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const availableRules = useMemo(() => {
     if (selectedRules.length === 0) return catalogRules;
     const selectedIds = new Set(selectedRules.map((r) => `${r.id}_${r.standard_version || 'v1.0.0'}`));
-    return catalogRules.filter((r) => !selectedIds.has(`${r.id}_${r.standard_version || 'v1.0.0'}`));
+    return catalogRules
+      .filter((r) => !selectedIds.has(`${r.id}_${r.standard_version || 'v1.0.0'}`))
+      .sort((a, b) => compareRuleIds(a.id, b.id));
   }, [catalogRules, selectedRules]);
 
   // Agrupación memoizada de las reglas disponibles
@@ -162,14 +165,11 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
       return f.status === filterStatus;
     });
 
-    return filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       let comparison = 0;
 
       if (sortField === 'rule_id') {
-        comparison = (a.rule_id || '').localeCompare(b.rule_id || '', undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        });
+        comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
         comparison = (a.status || '').localeCompare(b.status || '');
       }
@@ -252,7 +252,9 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                 </p>
               </div>
             ) : (
-              selectedRules.map((rule) => (
+              [...selectedRules]
+                .sort((a, b) => compareRuleIds(a.id, b.id))
+                .map((rule) => (
                 <div
                   key={`${rule.id}_${rule.standard_version}`}
                   onClick={() => removeRule(rule)}
@@ -275,7 +277,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                     ✕
                   </span>
                 </div>
-              ))
+                ))
             )}
           </div>
         </div>
@@ -299,7 +301,9 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                   </span>
                 </h4>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                  {rulesGroup.map((rule) => (
+                  {[...rulesGroup]
+                    .sort((a, b) => compareRuleIds(a.id, b.id))
+                    .map((rule) => (
                     <div
                       key={`${rule.id}_${rule.standard_version}`}
                       onClick={() => addRule(rule)}
@@ -313,7 +317,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                       </span>
                       <span className="text-xs font-bold text-blue-600">+</span>
                     </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             ))

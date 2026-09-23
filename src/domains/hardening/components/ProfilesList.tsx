@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import type { HardeningProfile } from '../hardening.types';
+import { compareRuleIds } from '../ruleOrdering';
 
 interface ProfilesListProps {
   profiles: HardeningProfile[];
@@ -71,7 +72,11 @@ export const ProfilesList: React.FC<ProfilesListProps> = ({ profiles }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {selectedProfile.rules?.map((rule) => (
+                {[...(selectedProfile.rules || [])]
+                  .sort((a, b) =>
+                    compareRuleIds(a.rule_id || a.code || a.id, b.rule_id || b.code || b.id)
+                  )
+                  .map((rule) => (
                   <tr key={rule.id} className="hover:bg-gray-50/50">
                     <td className="py-3 px-4 font-mono font-bold text-blue-600">
                       {rule.rule_id || rule.code || rule.id}
@@ -97,7 +102,7 @@ export const ProfilesList: React.FC<ProfilesListProps> = ({ profiles }) => {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  ))}
               </tbody>
             </table>
           </div>
