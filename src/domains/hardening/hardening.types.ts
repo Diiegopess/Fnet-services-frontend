@@ -10,6 +10,7 @@ export type ExecutionType = (typeof ExecutionType)[keyof typeof ExecutionType];
 
 export const FindingStatus = {
   PASSED: 'PASSED',
+  PARCIAL: 'PARCIAL',
   PARTIAL: 'PARTIAL',
   FAILED: 'FAILED',
   EXEMPT: 'EXEMPT',

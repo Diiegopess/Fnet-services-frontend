@@ -12,7 +12,7 @@ import type {
 } from './hardening.types';
 import { hardeningService } from './hardeningService';
 
-export const useHardening = (initialStandardVersion: string = 'v1.0.1') => {
+export const useHardening = (initialStandardVersion?: string) => {
   const [report, setReport] = useState<AuditReport | null>(null);
   const [profiles, setProfiles] = useState<HardeningProfile[]>([]);
   const [catalogRules, setCatalogRules] = useState<RuleCatalogItem[]>([]);
@@ -79,7 +79,11 @@ export const useHardening = (initialStandardVersion: string = 'v1.0.1') => {
         );
 
         const fallbackScore =
-          finding.status === 'PASSED' ? 100 : finding.status === 'PARTIAL' ? 50 : 0;
+          finding.status === 'PASSED'
+            ? 100
+            : finding.status === 'PARTIAL' || finding.status === 'PARCIAL'
+              ? 50
+              : 0;
 
         return {
           ...finding,

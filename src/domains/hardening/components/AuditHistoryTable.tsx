@@ -1,7 +1,7 @@
 // src/domains/hardening/components/AuditHistoryTable.tsx
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import type { AuditReportListItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
+import type { AuditReportListItem, AuditReport, ExportFormat } from '../hardening.types';
 import { hardeningService } from '../hardeningService';
 import { useHardening } from '../useHardening';
 
@@ -487,10 +487,10 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                             {/* Detalle actual */}
                             <td
                               onClick={() => toggleCellExpansion(currentCellId)}
-                              className="px-4 py-2.5 align-top font-mono text-xs max-w-md break-words cursor-pointer hover:bg-gray-100/60 transition-colors rounded"
+                              className="px-4 py-2.5 align-top font-mono text-xs max-w-md break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors rounded"
                               title="Haz clic para alternar vista completa"
                             >
-                              <div className={isCurrentExpanded ? '' : 'line-clamp-2'}>
+                              <div className={isCurrentExpanded ? '' : 'line-clamp-3'}>
                                 {f.current_value || 'N/A'}
                               </div>
                             </td>
@@ -498,10 +498,10 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                             {/* Valor esperado */}
                             <td
                               onClick={() => toggleCellExpansion(expectedCellId)}
-                              className="px-4 py-2.5 align-top font-mono text-xs max-w-xs break-words cursor-pointer hover:bg-gray-100/60 transition-colors rounded"
+                              className="px-4 py-2.5 align-top font-mono text-xs max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors rounded"
                               title="Haz clic para alternar vista completa"
                             >
-                              <div className={isExpectedExpanded ? '' : 'line-clamp-2'}>
+                              <div className={isExpectedExpanded ? '' : 'line-clamp-3'}>
                                 {f.expected_value || 'N/A'}
                               </div>
                             </td>

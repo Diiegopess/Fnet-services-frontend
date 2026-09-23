@@ -38,6 +38,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
   // Control de acordeón desplegable en línea por fila
   const [expandedRows, setExpandedRows] = useState<Record<string, ExpandedTab | null>>({});
+  const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const {
@@ -444,6 +445,8 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
                   const rowKey = `${finding.rule_id}-${idx}`;
                   const activeTab = expandedRows[rowKey] || null;
+                  const currentCellId = `${rowKey}-current`;
+                  const expectedCellId = `${rowKey}-expected`;
 
                   return (
                     <React.Fragment key={rowKey}>
@@ -489,13 +492,25 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                         </td>
 
                         {/* Detalle Actual */}
-                        <td className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap">
-                          {finding.current_value || 'N/A'}
+                        <td
+                          onClick={() => setExpandedCell((prev) => (prev === currentCellId ? null : currentCellId))}
+                          className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar la evidencia completa"
+                        >
+                          <div className={expandedCell === currentCellId ? '' : 'line-clamp-3'}>
+                            {finding.current_value || 'N/A'}
+                          </div>
                         </td>
 
                         {/* Valor Esperado */}
-                        <td className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words">
-                          {finding.expected_value || 'N/A'}
+                        <td
+                          onClick={() => setExpandedCell((prev) => (prev === expectedCellId ? null : expectedCellId))}
+                          className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar el valor completo"
+                        >
+                          <div className={expandedCell === expectedCellId ? '' : 'line-clamp-3'}>
+                            {finding.expected_value || 'N/A'}
+                          </div>
                         </td>
 
                         {/* Remediación interactiva */}
