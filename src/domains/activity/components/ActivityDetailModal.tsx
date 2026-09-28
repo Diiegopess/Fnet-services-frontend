@@ -1,13 +1,13 @@
 import React from 'react';
-import type { AuditLog } from '../audit.types';
+import type { ActivityLogResponse } from '../activity.types';
 import { formatDate } from '../../../shared/utils/formatDate';
 
-interface AuditDetailModalProps {
-  log: AuditLog | null;
+interface ActivityDetailModalProps {
+  log: ActivityLogResponse | null;
   onClose: () => void;
 }
 
-export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({ log, onClose }) => {
+export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ log, onClose }) => {
   if (!log) return null;
 
   return (
@@ -48,7 +48,7 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({ log, onClose
                 Fecha / Hora
               </span>
               <span className="text-xs text-gray-800">
-                {formatDate ? formatDate(log.occurred_at) : log.occurred_at}
+                {formatDate ? formatDate(log.created_at) : log.created_at}
               </span>
             </div>
 
@@ -118,4 +118,5 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({ log, onClose
   );
 };
 
-export default AuditDetailModal;
+export const AuditDetailModal = ActivityDetailModal;
+export default ActivityDetailModal;

@@ -4,22 +4,24 @@ import { useAuth } from '../domains/auth/AuthContext';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { UsersPage } from '../pages/UsersPage';
-import { AuditPage } from '../pages/AuditPage';
+import { ActivityPage } from '../pages/ActivityPage';
 import { ClientsPage } from '../pages/ClientsPage';
 import { DevicesPage } from '../pages/DevicesPage';
-import ProtectedRoute from './ProtectedRoute';
 import { HardeningPage } from '../pages/HardeningPage';
+import ProtectedRoute from './ProtectedRoute';
 
 export const AppRoutes: React.FC = () => {
   const { user } = useAuth();
 
   return (
     <Routes>
+      {/* Ruta Pública / Autenticación */}
       <Route
         path="/login"
         element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />}
       />
 
+      {/* Rutas Protegidas Estándar */}
       <Route
         path="/dashboard"
         element={
@@ -48,6 +50,16 @@ export const AppRoutes: React.FC = () => {
       />
 
       <Route
+        path="/hardening"
+        element={
+          <ProtectedRoute>
+            <HardeningPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Rutas Protegidas Administrador / Superusuario */}
+      <Route
         path="/users"
         element={
           <ProtectedRoute requireSuperuser>
@@ -57,31 +69,26 @@ export const AppRoutes: React.FC = () => {
       />
 
       <Route
-        path="/audit"
+        path="/activities"
         element={
           <ProtectedRoute requireSuperuser>
-            <AuditPage />
+            <ActivityPage />
           </ProtectedRoute>
         }
       />
 
+      {/* Redirección de Retrocompatibilidad de /audit a /activities */}
+      <Route
+        path="/audit"
+        element={<Navigate to="/activities" replace />}
+      />
+
+      {/* Ruta Comodín (Catch-all) */}
       <Route
         path="*"
         element={<Navigate to={user ? '/dashboard' : '/login'} replace />}
       />
-      <Route
-        path="/hardening"
-        element={
-          <ProtectedRoute>
-            <HardeningPage />
-          </ProtectedRoute>
-        }
-      />
-            
-
     </Routes>
-
-    
   );
 };
 

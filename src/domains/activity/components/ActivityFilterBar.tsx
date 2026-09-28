@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import type { LogFilter } from '../audit.types';
+import type { ActivityLogQueryParams } from '../activity.types';
 
-interface AuditFilterBarProps {
-  onFilter: (filter: LogFilter) => void;
+interface ActivityFilterBarProps {
+  onFilter: (filter: ActivityLogQueryParams) => void;
   onReset: () => void;
 }
 
-export const AuditFilterBar: React.FC<AuditFilterBarProps> = ({ onFilter, onReset }) => {
+export const ActivityFilterBar: React.FC<ActivityFilterBarProps> = ({ onFilter, onReset }) => {
   const [eventType, setEventType] = useState('');
   const [userId, setUserId] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -108,4 +108,6 @@ export const AuditFilterBar: React.FC<AuditFilterBarProps> = ({ onFilter, onRese
   );
 };
 
-export default AuditFilterBar;
+// Aliases para retrocompatibilidad de importaciones
+export const AuditFilterBar = ActivityFilterBar;
+export default ActivityFilterBar;

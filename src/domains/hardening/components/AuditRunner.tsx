@@ -84,7 +84,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Ejecución de auditoría deduciendo la versión desde el propio perfil
+  // Ejecución de auditoría
   const handleRunProfileAudit = async () => {
     if (!selectedDevice || !selectedProfile) return;
     setLocalError(null);
@@ -107,7 +107,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     }
   };
 
-  // Manejador de Exportación (DOCX, PDF)
+  // Exportación
   const handleExport = async (format: ExportFormat) => {
     if (!report?.id) return;
     try {
@@ -119,7 +119,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
 
   const activeError = localError || hookError;
   const allFindings = useMemo(
-    () => (report?.findings?.length ? report.findings : report?.findings_data || []),
+    () => report?.findings || [],
     [report]
   );
 
@@ -129,7 +129,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     if (report.score !== undefined && report.score !== null) {
       return Math.round(report.score);
     }
-    const total = report.total_rules_evaluated || allFindings.length;
+    const total = allFindings.length;
     if (total === 0) return 0;
     const passed = report.total_passed ?? allFindings.filter((f) => f.status === 'PASSED').length;
     return Math.round((passed / total) * 100);
@@ -155,9 +155,39 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     });
   }, [allFindings, filterStatus, sortField, sortDirection]);
 
+  // Función auxiliar para renderizar badges de estado
+  const renderStatusBadge = (status: string) => {
+    switch (status) {
+      case 'PASSED':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+            PASSED
+          </span>
+        );
+      case 'PARCIAL':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            PARCIAL
+          </span>
+        );
+      case 'NOT_APPLICABLE':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-700 border border-gray-300">
+            N/A
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800 border border-red-300">
+            FAILED
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Panel de Control y Selección: 2 columnas limpias */}
+      {/* Panel de Control y Selección */}
       <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row gap-4 items-end justify-between">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full md:w-3/4">
           <div>
@@ -224,7 +254,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              {/* BOTONES DE EXPORTACIÓN */}
               <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
                 <span className="text-xs font-semibold text-gray-500 px-2">Exportar:</span>
                 <button
@@ -243,7 +272,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                 </button>
               </div>
 
-              {/* TARJETA CUMPLIMIENTO TOTAL */}
               <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl">
                 <div>
                   <p className="text-xs font-bold text-blue-900 uppercase">Cumplimiento Total</p>
@@ -261,7 +289,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               Fallidas: {report.total_failed ?? allFindings.filter((f) => f.status === 'FAILED').length}
             </div>
             <div className="p-3 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200">
-              Evaluadas: {report.total_rules_evaluated || allFindings.length}
+              Evaluadas: {allFindings.length}
             </div>
           </div>
 
@@ -270,17 +298,22 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               Detalle por Regla ({processedFindings.length})
             </h4>
             <div className="flex gap-2 text-xs">
-              {['ALL', 'PASSED', 'FAILED'].map((st) => (
+              {[
+                { id: 'ALL', label: 'Todas' },
+                { id: 'PASSED', label: 'Aprobadas' },
+                { id: 'PARCIAL', label: 'Parciales' },
+                { id: 'FAILED', label: 'Fallidas' },
+              ].map((st) => (
                 <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
+                  key={st.id}
+                  onClick={() => setFilterStatus(st.id)}
                   className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
-                    filterStatus === st
+                    filterStatus === st.id
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-gray-100 text-gray-600 border-gray-300'
                   }`}
                 >
-                  {st === 'ALL' ? 'Todas' : st === 'PASSED' ? 'Pasaron' : 'Fallaron'}
+                  {st.label}
                 </button>
               ))}
             </div>
@@ -324,8 +357,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
-                  const isPassed = finding.status === 'PASSED';
-                  const ruleCompliance = finding.compliance_score ?? (isPassed ? 100 : 0);
+                  const ruleCompliance = finding.compliance_score ?? (finding.status === 'PASSED' ? 100 : finding.status === 'PARCIAL' ? 50 : 0);
 
                   const matchedRule = catalogRules.find(
                     (r) => r.id === finding.rule_id
@@ -342,7 +374,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                   return (
                     <React.Fragment key={rowKey}>
                       <tr className={`transition-colors ${activeTab ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
-                        {/* ID interactivo para expandir detalles */}
                         <td className="px-4 py-3 align-top">
                           <button
                             onClick={() => toggleRowAccordion(rowKey, 'details')}
@@ -358,31 +389,24 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                           </button>
                         </td>
 
-                        {/* Estado */}
                         <td className="px-4 py-3 align-top">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
-                              isPassed
-                                ? 'bg-green-100 text-green-800 border border-green-300'
-                                : 'bg-red-100 text-red-800 border border-red-300'
-                            }`}
-                          >
-                            {finding.status}
-                          </span>
+                          {renderStatusBadge(finding.status)}
                         </td>
 
-                        {/* Cumplimiento */}
                         <td className="px-4 py-3 align-top">
                           <span
                             className={`font-mono text-xs font-bold ${
-                              ruleCompliance === 100 ? 'text-green-700' : 'text-red-600'
+                              ruleCompliance === 100
+                                ? 'text-green-700'
+                                : ruleCompliance >= 50
+                                  ? 'text-amber-600'
+                                  : 'text-red-600'
                             }`}
                           >
                             {ruleCompliance}%
                           </span>
                         </td>
 
-                        {/* Detalle Actual */}
                         <td
                           onClick={() => setExpandedCell((prev) => (prev === currentCellId ? null : currentCellId))}
                           className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
@@ -393,7 +417,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                           </div>
                         </td>
 
-                        {/* Valor Esperado */}
                         <td
                           onClick={() => setExpandedCell((prev) => (prev === expectedCellId ? null : expectedCellId))}
                           className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
@@ -404,9 +427,8 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                           </div>
                         </td>
 
-                        {/* Remediación interactiva */}
                         <td className="px-4 py-3 align-top text-right">
-                          {!isPassed && finding.remediation_cmd && (
+                          {finding.status !== 'PASSED' && finding.remediation_cmd && (
                             <button
                               onClick={() => toggleRowAccordion(rowKey, 'remediation')}
                               className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
@@ -463,7 +485,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                                 </button>
                               </div>
 
-                              {/* Contenido: DETALLES */}
                               {activeTab === 'details' && (
                                 <div className="space-y-3 text-xs">
                                   <div className="flex items-center gap-3">
@@ -487,7 +508,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                                 </div>
                               )}
 
-                              {/* Contenido: REMEDIACIÓN */}
                               {activeTab === 'remediation' && finding.remediation_cmd && (
                                 <div className="space-y-3">
                                   <div className="flex items-center justify-between">

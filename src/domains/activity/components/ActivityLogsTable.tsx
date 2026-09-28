@@ -1,16 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import type { AuditLog } from '../audit.types';
+import type { ActivityLogResponse } from '../activity.types';
 import { formatDate } from '../../../shared/utils/formatDate';
 
-interface AuditLogsTableProps {
-  logs: AuditLog[];
+interface ActivityLogsTableProps {
+  logs: ActivityLogResponse[];
   hasMore: boolean;
   totalInMemory: number;
   onLoadMore: () => void;
-  onSelectLog: (log: AuditLog) => void;
+  onSelectLog: (log: ActivityLogResponse) => void;
 }
 
-export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
+export const ActivityLogsTable: React.FC<ActivityLogsTableProps> = ({
   logs,
   hasMore,
   totalInMemory,
@@ -19,14 +19,10 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
 }) => {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // Helper para resolver la fecha desde múltiples propiedades posibles
-  const getLogDate = (log: AuditLog): string => {
-    const rawDate =
-      log.occurred_at ||
-      (log as unknown as Record<string, unknown>).created_at ||
-      (log as unknown as Record<string, unknown>).timestamp;
-
-    if (!rawDate || typeof rawDate !== 'string') return '—';
+  // Helper para resolver el formato de fecha usando created_at de FastAPI
+  const getLogDate = (log: ActivityLogResponse): string => {
+    const rawDate = log.created_at;
+    if (!rawDate) return '—';
 
     try {
       return formatDate ? formatDate(rawDate) : rawDate;
@@ -36,12 +32,8 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
   };
 
   // Helper para resolver el identificador del usuario
-  const getUserId = (log: AuditLog): string => {
-    return (
-      log.user_id ||
-      (log as unknown as Record<string, unknown>).actor_id ||
-      '—'
-    ) as string;
+  const getUserId = (log: ActivityLogResponse): string => {
+    return log.user_id || '—';
   };
 
   // IntersectionObserver para detectar cuando el usuario llega al final
@@ -70,7 +62,7 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
   if (!logs || logs.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500">
-        No se encontraron registros de auditoría.
+        No se encontraron registros de actividad.
       </div>
     );
   }
@@ -191,4 +183,6 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
   );
 };
 
-export default AuditLogsTable;
+// Aliases para retrocompatibilidad
+export const AuditLogsTable = ActivityLogsTable;
+export default ActivityLogsTable;

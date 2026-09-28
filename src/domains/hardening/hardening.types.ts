@@ -10,10 +10,8 @@ export type ExecutionType = (typeof ExecutionType)[keyof typeof ExecutionType];
 
 export const FindingStatus = {
   PASSED: 'PASSED',
-  PARCIAL: 'PARCIAL',
-  PARTIAL: 'PARTIAL',
+  PARCIAL: 'PARCIAL', // Coincide con backend Enum
   FAILED: 'FAILED',
-  EXEMPT: 'EXEMPT',
   NOT_APPLICABLE: 'NOT_APPLICABLE',
 } as const;
 
@@ -49,12 +47,18 @@ export interface DynamicConditionSchema {
 
 export interface AuditExecutionPayload {
   device_id: string;
-  raw_config?: string;
   execution_type: ExecutionType;
+  raw_config?: Record<string, unknown>; // Corregido: Dict/JSON para FastAPI
   profile_id?: string;
   adhoc_rule_ids?: string[];
   vdom_id?: string;
   standard_version?: string;
+  connection_data?: {
+    host: string;
+    port: number;
+    token: string;
+    vdom?: string;
+  };
 }
 
 export interface Finding {
@@ -83,12 +87,10 @@ export interface AuditReport {
   score: number;
   total_passed: number;
   total_failed: number;
-  total_rules_evaluated: number;
   total_not_applicable?: number;
   executed_at?: string;
   created_at?: string;
-  findings_data?: Finding[];
-  findings?: Finding[];
+  findings: Finding[];
 }
 
 export interface AuditReportListItem {
@@ -108,15 +110,14 @@ export interface AuditReportListItem {
 
 export interface RuleCatalogItem {
   id: string;
-  rule_id?: string;
-  code?: string;
+  standard_version: string;
   name: string;
   description?: string;
-  category?: string;
-  standard?: string;
-  standard_version?: string;
-  default_severity?: RuleSeverity | string;
-  is_active?: boolean;
+  category: string;
+  standard: string;
+  default_severity: RuleSeverity;
+  is_active: boolean;
+  required_endpoint?: string;
   condition_schema?: DynamicConditionSchema;
 }
 

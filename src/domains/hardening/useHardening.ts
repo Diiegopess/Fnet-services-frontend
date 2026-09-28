@@ -37,9 +37,7 @@ export const useHardening = (initialStandardVersion?: string) => {
 
       const rulesMap = new Map<string, RuleCatalogItem>();
       extractedRules.forEach((rule) => {
-        const key = rule.standard_version 
-          ? `${rule.id}_${rule.standard_version}` 
-          : rule.id;
+        const key = `${rule.id}_${rule.standard_version}`;
         if (!rulesMap.has(key)) {
           rulesMap.set(key, rule);
         }
@@ -68,7 +66,7 @@ export const useHardening = (initialStandardVersion?: string) => {
       };
 
       const data = await hardeningService.runAudit(normalizedPayload);
-      const rawFindings = data.findings?.length ? data.findings : data.findings_data || [];
+      const rawFindings = data.findings || [];
 
       const enrichedFindings = rawFindings.map((finding) => {
         const matchedRule = catalogRules.find(
@@ -81,7 +79,7 @@ export const useHardening = (initialStandardVersion?: string) => {
         const fallbackScore =
           finding.status === 'PASSED'
             ? 100
-            : finding.status === 'PARTIAL' || finding.status === 'PARCIAL'
+            : finding.status === 'PARCIAL'
               ? 50
               : 0;
 
@@ -89,11 +87,11 @@ export const useHardening = (initialStandardVersion?: string) => {
           ...finding,
           compliance_score: finding.compliance_score ?? fallbackScore,
           rule_name: finding.rule_name || matchedRule?.name || finding.rule_id,
-          expected_value: finding.expected_value || 'Conformidad con política CIS',
+          expected_value: finding.expected_value || 'Conformidad con política de Hardening',
           remediation_cmd: finding.remediation_cmd || matchedRule?.description,
           severity:
             finding.severity ||
-            (matchedRule?.default_severity as RuleSeverity) ||
+            matchedRule?.default_severity ||
             RuleSeverity.MEDIUM,
         };
       });
@@ -101,7 +99,6 @@ export const useHardening = (initialStandardVersion?: string) => {
       const normalizedReport: AuditReport = {
         ...data,
         findings: enrichedFindings,
-        findings_data: enrichedFindings,
       };
 
       setReport(normalizedReport);

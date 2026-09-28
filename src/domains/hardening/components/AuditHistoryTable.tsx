@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import type { AuditReportListItem, AuditReport, ExportFormat } from '../hardening.types';
+import { FindingStatus } from '../hardening.types';
 import { hardeningService } from '../hardeningService';
 import { useHardening } from '../useHardening';
+import { parseApiError } from '../../../shared/utils/errorHandler';
 
 interface AuditHistoryTableProps {
   onSelectReport?: (report: AuditReport) => void;
@@ -63,8 +65,9 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
       setError(null);
       const data = await hardeningService.getAuditReports({ limit: 50 });
       setReports(data || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Error al cargar el historial de auditorías');
+    } catch (err: unknown) {
+      const parsed = parseApiError(err);
+      setError(parsed.message || 'Error al cargar el historial de auditorías');
     } finally {
       setLoading(false);
     }
@@ -96,8 +99,9 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
       } else {
         setSelectedReport(detail);
       }
-    } catch (err: any) {
-      alert('No se pudo cargar el detalle de la auditoría seleccionada.');
+    } catch (err: unknown) {
+      const parsed = parseApiError(err);
+      alert(`No se pudo cargar el detalle: ${parsed.message}`);
     } finally {
       setLoadingDetailId(null);
     }
@@ -154,9 +158,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
 
   const sortedFindings = useMemo(() => {
     if (!selectedReport) return [];
-    const rawFindings = selectedReport.findings?.length
-      ? selectedReport.findings
-      : selectedReport.findings_data || [];
+    const rawFindings = selectedReport.findings || [];
 
     return [...rawFindings].sort((a, b) => {
       let comparison = 0;
@@ -293,7 +295,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                     </span>
                   </td>
                   <td className="px-4 py-3 align-middle font-medium text-gray-900">
-                    {item.device_name || (item.device_id ? item.device_id.substring(0, 8) : 'Desconocido')}
+                    {item.device_name || (item.device_id ? `${item.device_id.substring(0, 8)}...` : 'Desconocido')}
                   </td>
                   <td className="px-4 py-3 align-middle text-xs">
                     <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-mono">
@@ -381,7 +383,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   Cumplimiento Total: {selectedReport.score !== undefined && selectedReport.score !== null ? `${Math.round(selectedReport.score)}%` : '0%'}
                 </div>
                 <div className="p-2.5 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200 text-sm">
-                  Evaluadas: {selectedReport.total_rules_evaluated ?? sortedFindings.length}
+                  Evaluadas: {selectedReport.total_not_applicable !== undefined ? sortedFindings.length : sortedFindings.length}
                 </div>
               </div>
 
@@ -423,17 +425,17 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {sortedFindings.map((f, idx) => {
-                      const isPassed = f.status === 'PASSED';
-                      const ruleCompliance = (f as any).compliance_score ?? (isPassed ? 100 : 0);
+                      const isPassed = f.status === FindingStatus.PASSED;
+                      const isPartial = f.status === FindingStatus.PARCIAL;
+                      const ruleCompliance = f.compliance_score ?? (isPassed ? 100 : isPartial ? 50 : 0);
+                      
                       const currentCellId = `current-${idx}`;
                       const expectedCellId = `expected-${idx}`;
 
                       const isCurrentExpanded = expandedCell === currentCellId;
                       const isExpectedExpanded = expandedCell === expectedCellId;
 
-                      const matchedRule = catalogRules?.find(
-                        (r) => r.id === f.rule_id
-                      );
+                      const matchedRule = catalogRules?.find((r) => r.id === f.rule_id);
                       const ruleName = f.rule_name || matchedRule?.name || f.rule_id;
                       const ruleDesc = matchedRule?.description || f.reason || 'Sin descripción disponible';
                       const ruleSeverity = f.severity || matchedRule?.default_severity || 'MEDIUM';
@@ -444,7 +446,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                       return (
                         <React.Fragment key={rowKey}>
                           <tr className={`transition-colors ${activeTab ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
-                            {/* ID interactivo para desplegar detalle en línea */}
+                            {/* ID interactivo */}
                             <td className="px-4 py-2.5 align-top">
                               <button
                                 onClick={() => toggleRowAccordion(rowKey, 'details')}
@@ -460,13 +462,15 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                               </button>
                             </td>
 
-                            {/* Estado */}
+                            {/* Estado con soporte PARCIAL / PASSED / FAILED */}
                             <td className="px-4 py-2.5 align-top">
                               <span
                                 className={`px-2 py-0.5 rounded text-[11px] font-bold inline-block ${
                                   isPassed
                                     ? 'bg-green-100 text-green-800 border border-green-200'
-                                    : 'bg-red-100 text-red-800 border border-red-200'
+                                    : isPartial
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                      : 'bg-red-100 text-red-800 border border-red-200'
                                 }`}
                               >
                                 {f.status}
@@ -477,10 +481,14 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                             <td className="px-4 py-2.5 align-top text-center">
                               <span
                                 className={`font-mono text-xs font-bold ${
-                                  ruleCompliance === 100 ? 'text-green-700' : 'text-red-600'
+                                  ruleCompliance === 100
+                                    ? 'text-green-700'
+                                    : ruleCompliance > 0
+                                      ? 'text-amber-600'
+                                      : 'text-red-600'
                                 }`}
                               >
-                                {ruleCompliance}%
+                                {Math.round(ruleCompliance)}%
                               </span>
                             </td>
 
