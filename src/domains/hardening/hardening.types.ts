@@ -143,3 +143,22 @@ export interface FetchReportsParams {
   limit?: number;
   offset?: number;
 }
+
+// --- TIPOS PARA AUDITORÍA DE BACKUP (OFFLINE) ---
+
+export interface BackupDeviceInfo {
+  model: string;
+  firmware_version: string;
+  build?: string;
+  vdom_enabled: boolean;
+}
+
+export interface BackupAuditResponse {
+  device_info: BackupDeviceInfo;
+  score: number;
+  total_passed: number;
+  total_partial: number;
+  total_failed: number;
+  total_not_applicable: number;
+  findings: Finding[];
+}

@@ -4,13 +4,14 @@ import React, { useState, useMemo } from 'react';
 import { ProfilesList } from './ProfilesList';
 import { AdHocBuilder } from './AdHocBuilder';
 import { AuditHistoryTable } from './AuditHistoryTable';
-import { AuditRunner } from './AuditRunner'; // 👈 Importante: Importar AuditRunner
+import { AuditRunner } from './AuditRunner';
+import { BackupAuditRunner } from './BackupAuditRunner';
 import { useHardening } from '../useHardening';
 import { useDevices } from '../../devices/useDevices';
 import type { RuleCatalogItem } from '../hardening.types';
 
 export const HardeningAuditTab: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'base' | 'adhoc' | 'runner' | 'history'>('base');
+  const [activeTab, setActiveTab] = useState<'base' | 'adhoc' | 'runner' | 'backup' | 'history'>('base');
   const { profiles } = useHardening();
   const { devices } = useDevices();
 
@@ -19,7 +20,6 @@ export const HardeningAuditTab: React.FC = () => {
     const rulesMap = new Map<string, RuleCatalogItem>();
     profiles?.forEach((profile) => {
       profile.rules?.forEach((rule: any) => {
-        // Obtenemos el identificador único (rule_id, code o id)
         const key = rule.rule_id || rule.code || rule.id;
         if (key && !rulesMap.has(key)) {
           rulesMap.set(key, rule);
@@ -56,7 +56,6 @@ export const HardeningAuditTab: React.FC = () => {
             Crear Evaluaciones Personalizadas (Ad-hoc)
           </button>
 
-          {/* 👈 Pestaña "Ejecutar Evaluación" agregada */}
           <button
             onClick={() => setActiveTab('runner')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
@@ -65,7 +64,18 @@ export const HardeningAuditTab: React.FC = () => {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            Ejecutar Evaluación
+            Ejecutar Evaluación en Vivo
+          </button>
+
+          <button
+            onClick={() => setActiveTab('backup')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
+              activeTab === 'backup'
+                ? 'border-blue-500 text-blue-600 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Auditar Archivo de Backup
           </button>
 
           <button
@@ -76,7 +86,7 @@ export const HardeningAuditTab: React.FC = () => {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📋 Historial de Evaluaciones
+            Historial de Evaluaciones
           </button>
         </nav>
       </div>
@@ -84,7 +94,7 @@ export const HardeningAuditTab: React.FC = () => {
       {/* Renderizado del Contenido */}
       <div className="py-6">
         {activeTab === 'base' && <ProfilesList profiles={profiles} />}
-        
+
         {activeTab === 'adhoc' && (
           <AdHocBuilder
             catalogRules={catalogRules}
@@ -92,11 +102,17 @@ export const HardeningAuditTab: React.FC = () => {
           />
         )}
 
-        {/* 👈 Renderizado de AuditRunner pasándole el catalogRules */}
         {activeTab === 'runner' && (
           <AuditRunner
             profiles={profiles || []}
             devices={devices || []}
+            catalogRules={catalogRules}
+          />
+        )}
+
+        {activeTab === 'backup' && (
+          <BackupAuditRunner
+            profiles={profiles || []}
             catalogRules={catalogRules}
           />
         )}

@@ -1,9 +1,10 @@
 // src/domains/hardening/components/AdHocBuilder.tsx
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
-import { ExecutionType, FindingStatus } from '../hardening.types';
+import { ExecutionType, FindingStatus, RuleSeverity } from '../hardening.types';
 import { useHardening } from '../useHardening';
+import { hardeningService } from '../hardeningService';
 import { compareRuleIds } from '../ruleOrdering';
 
 interface Device {
@@ -26,10 +27,15 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   devices = [],
 }) => {
   const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRules, setSelectedRules] = useState<RuleCatalogItem[]>([]);
+
+  // Referencia para invocar el input de tipo archivo nativo
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estados para resultados y errores
   const [report, setReport] = useState<AuditReport | null>(null);
+  const [localLoading, setLocalLoading] = useState<boolean>(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
@@ -46,9 +52,33 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     executeAudit,
     exportAuditReport: exportReport,
     exporting,
-    loading,
+    loading: hookLoading,
     error: hookError,
   } = useHardening();
+
+  const loading = localLoading || hookLoading;
+
+  // Manejo de carga de archivo
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+      setSelectedDevice(''); // Desmarca equipo en vivo si se sube archivo
+      setLocalError(null);
+    }
+  };
+
+  const handleDeviceChange = (deviceId: string) => {
+    setSelectedDevice(deviceId);
+    if (deviceId) {
+      setSelectedFile(null); // Desmarca archivo si se selecciona equipo
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleClearFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // Cálculo memoizado de reglas disponibles
   const availableRules = useMemo(() => {
@@ -108,33 +138,77 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Ejecución Ad-hoc directa
+  // Ejecución unificada de la auditoría Ad-hoc
   const handleRunAdHocAudit = async () => {
-    if (!selectedDevice || selectedRules.length === 0) return;
+    if ((!selectedDevice && !selectedFile) || selectedRules.length === 0) return;
     setLocalError(null);
 
+    const ruleIds = selectedRules.map((r) => r.id);
+
     try {
-      const activeVersion = selectedRules[0]?.standard_version || 'v1.0.0';
+      if (selectedFile) {
+        setLocalLoading(true);
+        // Se envía undefined en standardVersion para permitir reglas mixtas de múltiples estándares
+        const data = await hardeningService.auditBackupFile(
+          selectedFile,
+          undefined,
+          undefined,
+          ruleIds
+        );
 
-      const result = await executeAudit({
-        device_id: selectedDevice,
-        raw_config: {}, // Corregido: Objeto JSON vacío acorde a FastAPI
-        execution_type: ExecutionType.CUSTOM_ADHOC,
-        adhoc_rule_ids: selectedRules.map((r) => r.id),
-        standard_version: activeVersion,
-      });
+        const enrichedFindings: Finding[] = (data.findings || []).map((finding) => {
+          const matchedRule = catalogRules.find((r) => r.id === finding.rule_id);
+          return {
+            ...finding,
+            id: finding.rule_id,
+            rule_name: finding.rule_name || matchedRule?.name || finding.rule_id,
+            expected_value: finding.expected_value || 'Conformidad con política de Hardening',
+            remediation_cmd: finding.remediation_cmd || matchedRule?.description,
+            severity: finding.severity || matchedRule?.default_severity || RuleSeverity.MEDIUM,
+          };
+        });
 
-      setReport(result);
+        const normalizedReport: AuditReport = {
+          id: `backup-${Date.now()}`,
+          device_id: selectedFile.name,
+          execution_type: ExecutionType.CUSTOM_ADHOC,
+          score: data.score,
+          total_passed: data.total_passed,
+          total_failed: data.total_failed,
+          total_not_applicable: data.total_not_applicable,
+          findings: enrichedFindings,
+        };
+
+        setReport(normalizedReport);
+      } else {
+        const activeVersion = selectedRules[0]?.standard_version || 'v1.0.0';
+        const result = await executeAudit({
+          device_id: selectedDevice,
+          raw_config: {},
+          execution_type: ExecutionType.CUSTOM_ADHOC,
+          adhoc_rule_ids: ruleIds,
+          standard_version: activeVersion,
+        });
+        setReport(result);
+      }
+
       setExpandedRows({});
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Error al ejecutar auditoría Ad-hoc';
-      setLocalError(msg);
+    } catch (err: any) {
+      // Extracción limpia del error 422 o mensaje devuelto por FastAPI
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' 
+        ? detail 
+        : Array.isArray(detail) 
+        ? detail[0]?.msg 
+        : err.message;
+      setLocalError(msg || 'Error al ejecutar auditoría Ad-hoc');
+    } finally {
+      setLocalLoading(false);
     }
   };
 
   const handleExport = async (format: ExportFormat) => {
-    if (!report?.id) return;
+    if (!report?.id || report.id.startsWith('backup-')) return;
     try {
       await exportReport(report.id, format);
     } catch (err) {
@@ -145,7 +219,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const activeError = localError || hookError;
   const allFindings = useMemo(() => report?.findings || [], [report]);
 
-  // Porcentaje de cumplimiento total
   const totalComplianceScore = useMemo(() => {
     if (!report) return 0;
     if (typeof report.score === 'number') {
@@ -156,7 +229,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     return Math.round((passed / allFindings.length) * 100);
   }, [report, allFindings]);
 
-  // Filtrado y Ordenamiento
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
@@ -176,33 +248,77 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Barra de Control */}
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div className="w-full sm:w-1/2">
-          <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
-            Seleccionar Dispositivo (FortiGate)
-          </label>
-          <select
-            value={selectedDevice}
-            onChange={(e) => setSelectedDevice(e.target.value)}
-            className="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          >
-            <option value="">-- Seleccionar Equipo --</option>
-            {devices.map((dev) => (
-              <option key={dev.id} value={dev.id}>
-                {dev.name} ({dev.host})
-              </option>
-            ))}
-          </select>
+      {/* Barra de Control Directa */}
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row gap-4 items-end justify-between">
+        
+        {/* Selector de Dispositivo y Botón de Backup Integrado */}
+        <div className="w-full md:w-2/3 flex flex-col sm:flex-row gap-3 items-end">
+          <div className="w-full sm:flex-1">
+            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+              Seleccionar Dispositivo (FortiGate)
+            </label>
+            <select
+              value={selectedDevice}
+              onChange={(e) => handleDeviceChange(e.target.value)}
+              disabled={!!selectedFile}
+              className="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <option value="">-- Seleccionar Equipo --</option>
+              {devices.map((dev) => (
+                <option key={dev.id} value={dev.id}>
+                  {dev.name} ({dev.host})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-full sm:w-auto flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".conf,.txt"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {!selectedFile ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full sm:w-auto px-4 py-2.5 border border-gray-300 hover:border-blue-400 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 text-sm font-medium rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+              >
+                <span>Cargar Backup (.conf)</span>
+              </button>
+            ) : (
+              <div className="w-full sm:w-auto flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-xs font-medium text-blue-800 truncate max-w-[160px]">
+                  📄 {selectedFile.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearFile}
+                  className="text-xs text-gray-400 hover:text-red-600 font-bold px-1 cursor-pointer"
+                  title="Quitar archivo"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* Botón de Ejecución */}
         <button
           onClick={handleRunAdHocAudit}
-          disabled={!selectedDevice || selectedRules.length === 0 || loading}
-          className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer self-end flex items-center justify-center gap-2"
+          disabled={
+            (!selectedDevice && !selectedFile) ||
+            selectedRules.length === 0 ||
+            loading
+          }
+          className="w-full md:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
         >
           {loading ? (
-            <span>Evaluando en Vivo...</span>
+            <span>Evaluando...</span>
           ) : (
             <>
               <span>Ejecutar Evaluación Ad-hoc</span>
@@ -329,38 +445,38 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               <h3 className="text-lg font-bold text-gray-900">
                 Resultados de la Auditoría Ad-hoc
               </h3>
-              <p className="text-xs text-gray-500">ID Auditoría: {report.id}</p>
+              <p className="text-xs text-gray-500">
+                {selectedFile
+                  ? `Origen: ${selectedFile.name}`
+                  : `ID Auditoría: ${report.id}`}
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
-                <span className="text-xs font-semibold text-gray-500 px-2">
-                  Exportar:
-                </span>
-                <button
-                  onClick={() => handleExport('docx')}
-                  disabled={exporting}
-                  className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  DOCX
-                </button>
-                <button
-                  onClick={() => handleExport('pdf')}
-                  disabled={exporting}
-                  className="px-3 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  PDF
-                </button>
-              </div>
+              {!selectedFile && (
+                <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                  <span className="text-xs font-semibold text-gray-500 px-2">Exportar:</span>
+                  <button
+                    onClick={() => handleExport('docx')}
+                    disabled={exporting}
+                    className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    DOCX
+                  </button>
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    disabled={exporting}
+                    className="px-3 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    PDF
+                  </button>
+                </div>
+              )}
 
               <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl">
                 <div>
-                  <p className="text-xs font-bold text-blue-900 uppercase">
-                    Cumplimiento Total
-                  </p>
-                  <p className="text-2xl font-black text-blue-700">
-                    {totalComplianceScore}%
-                  </p>
+                  <p className="text-xs font-bold text-blue-900 uppercase">Cumplimiento Total</p>
+                  <p className="text-2xl font-black text-blue-700">{totalComplianceScore}%</p>
                 </div>
               </div>
             </div>

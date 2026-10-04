@@ -5,6 +5,7 @@ import type {
   AuditExecutionPayload,
   AuditReport,
   AuditReportListItem,
+  BackupAuditResponse,
   ExportFormat,
   FetchReportsParams,
   HardeningProfile,
@@ -18,6 +19,41 @@ export const hardeningService = {
     return data;
   },
 
+    async auditBackupFile(
+    file: File,
+    profileId?: string,
+    standardVersion?: string,
+    adhocRuleIds?: string[]
+  ): Promise<BackupAuditResponse> {
+    const formData = new FormData();
+    
+    // 1. Agregar el archivo explícitamente con su nombre
+    formData.append('file', file, file.name);
+
+    if (profileId) {
+      formData.append('profile_id', profileId);
+    }
+
+    if (standardVersion) {
+      formData.append('standard_version', standardVersion);
+    }
+
+    if (adhocRuleIds && adhocRuleIds.length > 0) {
+      adhocRuleIds.forEach((id) => formData.append('adhoc_rule_ids', id));
+    }
+
+    // 2. Sobrescribir el header Content-Type para esta petición
+    const { data } = await apiClient.post<BackupAuditResponse>(
+      '/hardening/audit/backup',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return data;
+  },
   // Obtiene todos los perfiles (sin filtro obligatorio para que aparezcan siempre)
   async getProfiles(standardVersion?: string): Promise<HardeningProfile[]> {
     const { data } = await apiClient.get<HardeningProfile[]>('/hardening/profiles', {

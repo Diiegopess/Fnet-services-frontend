@@ -1,17 +1,13 @@
 // src/pages/HardeningPage.tsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useHardening } from '../domains/hardening/useHardening';
 import { useDevices } from '../domains/devices/useDevices';
-import { ProfilesList } from '../domains/hardening/components/ProfilesList';
-import { AdHocBuilder } from '../domains/hardening/components/AdHocBuilder';
-import { AuditRunner } from '../domains/hardening/components/AuditRunner';
-import { AuditHistoryTable } from '../domains/hardening/components/AuditHistoryTable';
+import { HardeningAuditTab } from '../domains/hardening/components/HardeningAuditTab';
 
 export const HardeningPage: React.FC = () => {
-  const { profiles, catalogRules, loading, error } = useHardening();
-  const { devices, fetchDevices } = useDevices();
-  const [activeTab, setActiveTab] = useState<'profiles' | 'adhoc' | 'eval' | 'history'>('profiles');
+  const { loading, error } = useHardening();
+  const { fetchDevices } = useDevices();
 
   useEffect(() => {
     if (fetchDevices) {
@@ -42,76 +38,8 @@ export const HardeningPage: React.FC = () => {
         </div>
       )}
 
-      {/* Navegación por Pestañas */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('profiles')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
-              activeTab === 'profiles'
-                ? 'border-blue-600 text-blue-600 font-bold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Perfiles Base
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('adhoc')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
-              activeTab === 'adhoc'
-                ? 'border-blue-600 text-blue-600 font-bold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Crear Evaluaciones Personalizadas (Ad-hoc)
-          </button>
-
-          <button
-            onClick={() => setActiveTab('eval')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
-              activeTab === 'eval'
-                ? 'border-blue-600 text-blue-600 font-bold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Ejecutar Evaluación
-          </button>
-
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors cursor-pointer ${
-              activeTab === 'history'
-                ? 'border-blue-600 text-blue-600 font-bold'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Historial de Evaluaciones
-          </button>
-        </nav>
-      </div>
-
-      {/* Vistas */}
-      {!loading && activeTab === 'profiles' && <ProfilesList profiles={profiles} />}
-
-      {!loading && activeTab === 'adhoc' && (
-        <AdHocBuilder 
-          catalogRules={catalogRules}
-          devices={devices || []} 
-        />
-      )}
-
-      {!loading && activeTab === 'eval' && (
-        <AuditRunner 
-          profiles={profiles} 
-          devices={devices || []} 
-          catalogRules={catalogRules} 
-        />
-      )}
-
-      {!loading && activeTab === 'history' && (
-        <AuditHistoryTable />
-      )}
+      {/* El componente de dominio gestiona todas las pestañas internamente */}
+      {!loading && <HardeningAuditTab />}
     </div>
   );
 };
