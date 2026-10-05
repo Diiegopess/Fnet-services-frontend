@@ -7,10 +7,11 @@ import type {
   DeviceUpdateRequest,
   FortiOSVersionOption,
   TestConnectionRequest,
+  VDOMResponse,
 } from './device.types';
 import { parseApiError } from '../../shared/utils/errorHandler';
 
-export function useDevices() {
+export function useDevices(initialClientId?: string) {
   const [devices, setDevices] = useState<DeviceResponse[]>([]);
   const [supportedVersions, setSupportedVersions] = useState<FortiOSVersionOption[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -18,24 +19,29 @@ export function useDevices() {
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<ConnectivityCheckResult | null>(null);
 
-  const fetchDevices = useCallback(async (skip = 0, limit = 50) => {
+  // Estado dedicado para particiones VDOM en foco
+  const [activeVDOMs, setActiveVDOMs] = useState<VDOMResponse[]>([]);
+  const [isSyncingVDOMs, setIsSyncingVDOMs] = useState<boolean>(false);
+
+  const fetchDevices = useCallback(async (skip = 0, limit = 50, clientId?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await deviceService.getDevices(skip, limit);
+      const targetClient = clientId !== undefined ? clientId : initialClientId;
+      const data = await deviceService.getDevices(skip, limit, targetClient);
       setDevices(data);
     } catch (err) {
       setError(parseApiError(err).message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [initialClientId]);
 
   const fetchSupportedVersions = useCallback(async () => {
     try {
       const versions = await deviceService.getSupportedVersions();
       setSupportedVersions(versions);
-    } catch (err) {
+    } catch {
       setSupportedVersions([
         { label: 'FortiOS v7.4.x', value: '7.4' },
         { label: 'FortiOS v7.2.x', value: '7.2' },
@@ -62,7 +68,6 @@ export function useDevices() {
     }
   };
 
-  // NUEVO: Método para actualizar firewall (PATCH)
   const updateDevice = async (id: string, payload: DeviceUpdateRequest) => {
     setIsLoading(true);
     setError(null);
@@ -113,6 +118,58 @@ export function useDevices() {
     }
   };
 
+  // --- Métodos de VDOMs expuestos en el Hook ---
+  const fetchDeviceVDOMs = async (deviceId: string): Promise<VDOMResponse[]> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const list = await deviceService.getDeviceVDOMs(deviceId);
+      setActiveVDOMs(list);
+      return list;
+    } catch (err) {
+      const msg = parseApiError(err).message;
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const syncDeviceVDOMs = async (deviceId: string): Promise<VDOMResponse[]> => {
+    setIsSyncingVDOMs(true);
+    setError(null);
+    try {
+      // 1. Ejecutar el sync en el backend (POST /vdoms/device/{deviceId}/sync)
+      await deviceService.syncDeviceVDOMs(deviceId);
+      
+      // 2. Traer la lista actualizada desde la base de datos (GET /vdoms/device/{deviceId})
+      const list = await deviceService.getDeviceVDOMs(deviceId);
+      setActiveVDOMs(list);
+      return list;
+    } catch (err) {
+      const msg = parseApiError(err).message;
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsSyncingVDOMs(false);
+    }
+  };
+
+  const assignVDOMClient = async (
+    vdomId: string,
+    clientId: string | null
+  ): Promise<VDOMResponse> => {
+    try {
+      const updated = await deviceService.updateVDOMClient(vdomId, clientId);
+      setActiveVDOMs((prev) => prev.map((v) => (v.id === vdomId ? updated : v)));
+      return updated;
+    } catch (err) {
+      const msg = parseApiError(err).message;
+      setError(msg);
+      throw new Error(msg);
+    }
+  };
+
   useEffect(() => {
     fetchDevices();
     fetchSupportedVersions();
@@ -125,12 +182,17 @@ export function useDevices() {
     error,
     isTesting,
     testResult,
+    activeVDOMs,
+    isSyncingVDOMs,
     setTestResult,
     fetchDevices,
     fetchSupportedVersions,
     createDevice,
-    updateDevice, // <-- Expuesto
+    updateDevice,
     deleteDevice,
     testConnection,
+    fetchDeviceVDOMs,
+    syncDeviceVDOMs,
+    assignVDOMClient,
   };
 }

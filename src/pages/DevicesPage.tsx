@@ -5,6 +5,7 @@ import DevicesTable from '../domains/devices/components/DevicesTable';
 import CreateDeviceModal from '../domains/devices/components/CreateDeviceModal';
 import EditDeviceModal from '../domains/devices/components/EditDeviceModal';
 import DeleteDeviceModal from '../domains/devices/components/DeleteDeviceModal';
+import ManageVDOMsModal from '../domains/devices/components/ManageVDOMsModal';
 import { Shield, Plus } from 'lucide-react';
 import type { DeviceResponse, DeviceUpdateRequest } from '../domains/devices/device.types';
 import { deviceService } from '../domains/devices/deviceService';
@@ -20,6 +21,7 @@ export const DevicesPage: React.FC = () => {
     updateDevice,
     deleteDevice,
     testConnection,
+    syncDeviceVDOMs,
   } = useDevices();
 
   const { clients } = useClients();
@@ -28,12 +30,22 @@ export const DevicesPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceResponse | null>(null);
   const [deletingDevice, setDeletingDevice] = useState<DeviceResponse | null>(null);
+  const [vdomTargetDevice, setVdomTargetDevice] = useState<DeviceResponse | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const handleTestConnection = async (device: DeviceResponse): Promise<boolean> => {
     try {
       const result = await deviceService.testExistingDeviceConnection(device.id);
       return result.is_reachable;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleSyncVDOMs = async (device: DeviceResponse): Promise<boolean> => {
+    try {
+      await syncDeviceVDOMs(device.id);
+      return true;
     } catch {
       return false;
     }
@@ -98,12 +110,13 @@ export const DevicesPage: React.FC = () => {
         ) : (
           <DevicesTable
             devices={devices}
-            clients={clients}
             actionLoadingId={actionLoadingId}
             onTestConnection={handleTestConnection}
+            onSyncVDOMs={handleSyncVDOMs}
             onToggleStatus={handleToggleStatus}
             onEdit={(device) => setEditingDevice(device)}
             onDelete={(device) => setDeletingDevice(device)}
+            onManageVDOMs={(device) => setVdomTargetDevice(device)}
           />
         )}
       </div>
@@ -129,7 +142,6 @@ export const DevicesPage: React.FC = () => {
         onSubmit={handleUpdateSubmit}
         onTestConnection={testConnection}
         onTestExistingConnection={(deviceId) => deviceService.testExistingDeviceConnection(deviceId)}
-        clients={clients}
         testingConnection={isTesting}
       />
 
@@ -138,6 +150,13 @@ export const DevicesPage: React.FC = () => {
         device={deletingDevice}
         onClose={() => setDeletingDevice(null)}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Modal de Sincronización y Asignación de VDOMs */}
+      <ManageVDOMsModal
+        isOpen={!!vdomTargetDevice}
+        device={vdomTargetDevice}
+        onClose={() => setVdomTargetDevice(null)}
         clients={clients}
       />
     </div>

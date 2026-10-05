@@ -7,7 +7,6 @@ interface DeleteDeviceModalProps {
   device: DeviceResponse | null;
   onClose: () => void;
   onConfirm: (device: DeviceResponse) => Promise<void>;
-  clients?: Array<{ id: string; name: string }>;
 }
 
 export const DeleteDeviceModal: React.FC<DeleteDeviceModalProps> = ({
@@ -15,16 +14,10 @@ export const DeleteDeviceModal: React.FC<DeleteDeviceModalProps> = ({
   device,
   onClose,
   onConfirm,
-  clients = [],
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   if (!isOpen || !device) return null;
-
-  // Lógica de presentación de cliente respetando tus tipos
-  const clientName = device.has_vdom_enabled
-    ? 'Múltiples Clientes (Modo Multi-VDOM)'
-    : clients.find((c) => c.id === device.client_id)?.name || 'Sin cliente asignado';
 
   const handleConfirm = async () => {
     setIsDeleting(true);
@@ -61,7 +54,7 @@ export const DeleteDeviceModal: React.FC<DeleteDeviceModalProps> = ({
           </button>
         </div>
 
-        {/* Resumen detallado del equipo */}
+        {/* Resumen del equipo */}
         <div className="p-5 space-y-4">
           <p className="text-sm text-gray-600">
             Estás a punto de eliminar el siguiente firewall de la plataforma:
@@ -77,14 +70,14 @@ export const DeleteDeviceModal: React.FC<DeleteDeviceModalProps> = ({
               <span className="font-mono text-gray-800">{device.host}:{device.port}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500 font-medium">Cliente:</span>
-              <span className="text-gray-800 font-medium">{clientName}</span>
+              <span className="text-gray-500 font-medium">Modo Operativo:</span>
+              <span className="font-semibold text-gray-800">
+                {device.has_vdom_enabled ? 'Multi-VDOM' : 'Standalone (Partición Root)'}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500 font-medium">FortiOS / Modo:</span>
-              <span className="text-gray-800 font-mono">
-                {device.fortios_version} ({device.has_vdom_enabled ? `Multi-VDOM [${device.vdoms?.length || 0}]` : 'Standalone'})
-              </span>
+              <span className="text-gray-500 font-medium">Versión FortiOS:</span>
+              <span className="text-gray-800 font-mono">v{device.fortios_version}</span>
             </div>
             {device.serial_number && (
               <div className="flex justify-between">
@@ -94,14 +87,12 @@ export const DeleteDeviceModal: React.FC<DeleteDeviceModalProps> = ({
             )}
           </div>
 
-          {device.has_vdom_enabled && device.vdoms && device.vdoms.length > 0 && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-xs text-amber-800">
-              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>
-                <strong>Atención:</strong> Este equipo posee <strong>{device.vdoms.length} VDOM(s)</strong> vinculados que también serán desvinculados del sistema.
-              </span>
-            </div>
-          )}
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-xs text-amber-800">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span>
+              <strong>Advertencia de integridad:</strong> Todas las particiones (VDOMs) asociadas a este hardware serán eliminadas en cascada por la base de datos.
+            </span>
+          </div>
         </div>
 
         {/* Botones de acción */}

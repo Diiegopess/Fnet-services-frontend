@@ -5,7 +5,7 @@ import type {
   TestConnectionRequest,
   ConnectivityCheckResult,
 } from '../device.types';
-import { X, Shield } from 'lucide-react';
+import { X, Shield, Network, HardDrive } from 'lucide-react';
 
 interface EditDeviceModalProps {
   isOpen: boolean;
@@ -13,9 +13,7 @@ interface EditDeviceModalProps {
   onClose: () => void;
   onSubmit: (id: string, payload: DeviceUpdateRequest) => Promise<void>;
   onTestConnection: (payload: TestConnectionRequest) => Promise<ConnectivityCheckResult>;
-  // 1. Añadimos la función para probar dispositivos existentes sin enviar token
   onTestExistingConnection: (deviceId: string) => Promise<ConnectivityCheckResult>;
-  clients?: Array<{ id: string; name: string }>;
   testingConnection?: boolean;
 }
 
@@ -25,8 +23,7 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
   onClose,
   onSubmit,
   onTestConnection,
-  onTestExistingConnection, // 2. Recibimos la prop aquí
-  clients = [],
+  onTestExistingConnection,
   testingConnection = false,
 }) => {
   if (!isOpen || !device) return null;
@@ -48,11 +45,6 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
     return match ? match[0] : '7.2';
   };
 
-  const clientName = device.has_vdom_enabled
-    ? 'Múltiples Clientes (Modo Multi-VDOM)'
-    : clients.find((c) => c.id === device.client_id)?.name || 'Sin cliente asignado';
-
-  // 3. Lógica limpia para decidir qué endpoint consultar
   const handleTest = async () => {
     if (!host.trim()) {
       setError('El Host / IP es requerido para probar la conexión.');
@@ -63,7 +55,6 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
     try {
       let result: ConnectivityCheckResult;
 
-      // Si el usuario ingresó un nuevo token, probamos los datos nuevos
       if (apiToken.trim()) {
         result = await onTestConnection({
           host: host.trim(),
@@ -71,7 +62,6 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
           api_token: apiToken.trim(),
         });
       } else {
-        // Si no escribió un token, le decimos al backend que use el token guardado en DB
         result = await onTestExistingConnection(device.id);
       }
 
@@ -116,15 +106,27 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden zoom-in-95 duration-150">
         <div className="flex justify-between items-start p-5 border-b border-gray-100">
           <div>
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-blue-600" />
               <h3 className="font-semibold text-gray-800">Editar Firewall: {device.name}</h3>
             </div>
-            <p className="text-xs text-gray-500 mt-1 pl-7">{clientName}</p>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1 pl-7">
+              {device.has_vdom_enabled ? (
+                <>
+                  <Network className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Modo Multi-VDOM (Particionado)</span>
+                </>
+              ) : (
+                <>
+                  <HardDrive className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Modo Standalone (Partición Root)</span>
+                </>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">
             <X className="w-5 h-5" />
@@ -154,7 +156,7 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
                   : `Fallo de conexión: ${testResult.error_message || 'No alcanzable'}`}
               </span>
               {testResult.serial_number && (
-                <span className="font-mono text-[11px] bg-white/70 px-2 py-0.5 rounded">
+                <span className="font-mono text-[11px] bg-white/70 px-2 py-0.5 rounded border border-emerald-300">
                   SN: {testResult.serial_number}
                 </span>
               )}
@@ -236,7 +238,7 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
                 type="button"
                 onClick={handleTest}
                 disabled={testingConnection}
-                className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-md border border-gray-300 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
+                className="px-3.5 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-md border border-gray-300 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
               >
                 {testingConnection ? 'Probando...' : 'Test'}
               </button>
@@ -254,7 +256,7 @@ export const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 cursor-pointer font-medium"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 cursor-pointer font-medium transition-colors"
             >
               {isSubmitting ? 'Guardando...' : 'Guardar Cambios'}
             </button>

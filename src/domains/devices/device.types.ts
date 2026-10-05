@@ -1,7 +1,7 @@
 export interface VDOMResponse {
   id: string;
   device_id: string;
-  client_id: string;
+  client_id: string | null; // Nullable: partición de infraestructura interna o sin asignar
   name: string;
   is_root: boolean;
   is_active: boolean;
@@ -18,8 +18,6 @@ export interface DeviceResponse {
   serial_number: string | null;
   has_vdom_enabled: boolean;
   is_active: boolean;
-  client_id?: string | null; // <-- Añadido: ID del cliente al que pertenece el chasis
-  vdoms: VDOMResponse[];
   created_at: string;
   updated_at: string;
 }
@@ -31,7 +29,7 @@ export interface DeviceCreateRequest {
   fortios_version?: string;
   api_token: string;
   has_vdom_enabled?: boolean;
-  client_id?: string | null; // <-- Cambiado de default_client_id a client_id si así quedó en backend
+  client_id?: string | null; // Asigna el cliente a la VDOM 'root' inicial
   is_active?: boolean;
 }
 
@@ -42,7 +40,6 @@ export interface DeviceUpdateRequest {
   fortios_version?: string;
   api_token?: string;
   has_vdom_enabled?: boolean;
-  client_id?: string | null; // <-- Útil si deseas reasignar de cliente en un update
   is_active?: boolean;
 }
 

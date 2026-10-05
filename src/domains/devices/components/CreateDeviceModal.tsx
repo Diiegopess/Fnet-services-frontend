@@ -6,6 +6,7 @@ import type {
   FortiOSVersionOption,
 } from '../device.types';
 import type { Client } from '../../clients/client.types';
+import { Layers, HardDrive, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export interface CreateDeviceModalProps {
   isOpen: boolean;
@@ -30,7 +31,7 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
   const [formData, setFormData] = useState<DeviceCreateRequest>({
     name: '',
     host: '',
-    port: 8443,
+    port: 12443,
     fortios_version: '7.2',
     api_token: '',
     has_vdom_enabled: false,
@@ -44,7 +45,6 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Extrae la versión limpia ("7.2") y mantiene la versión completa para mostrar en UI ("v7.2.4")
   const parseFortiOSVersion = (rawVersion: string): string => {
     if (rawVersion.includes('mock')) return 'mock';
     const match = rawVersion.match(/\d+\.\d+/);
@@ -60,15 +60,25 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
     try {
       const result = await onTestConnection({
         host: formData.host.trim(),
-        port: Number(formData.port) || 8443,
+        port: Number(formData.port) || 12443,
         api_token: formData.api_token.trim(),
       });
       setTestResult(result);
 
-      if (result.is_reachable && result.detected_version) {
-        const cleanVersion = parseFortiOSVersion(result.detected_version);
-        setFormData((prev) => ({ ...prev, fortios_version: cleanVersion }));
-        setDetectedVersionLabel(result.detected_version);
+      if (result.is_reachable) {
+        // Auto-detección de Versión
+        if (result.detected_version) {
+          const cleanVersion = parseFortiOSVersion(result.detected_version);
+          setFormData((prev) => ({ ...prev, fortios_version: cleanVersion }));
+          setDetectedVersionLabel(result.detected_version);
+        }
+
+        // Auto-detección estricta de Topología / VDOM
+        const isMultiVdom = result.vdom_mode === 'multi-vdom';
+        setFormData((prev) => ({
+          ...prev,
+          has_vdom_enabled: isMultiVdom,
+        }));
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al probar conexión';
@@ -84,21 +94,20 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
     }
 
     if (!formData.has_vdom_enabled && !formData.client_id) {
-      setError('En modo Standalone (sin VDOMs) debes seleccionar el Cliente propietario.');
+      setError('En modo Standalone debes seleccionar el Cliente propietario.');
       return;
     }
 
     try {
       setError(null);
-
       const cleanPayload: DeviceCreateRequest = {
         ...formData,
         name: formData.name.trim(),
         host: formData.host.trim(),
         api_token: formData.api_token.trim(),
-        port: Number(formData.port) || 8443,
+        port: Number(formData.port) || 12443,
         fortios_version: parseFortiOSVersion(formData.fortios_version ?? '7.2'),
-        client_id: formData.has_vdom_enabled ? null : formData.client_id || null,
+        client_id: formData.client_id || null,
       };
 
       await onSubmit(cleanPayload);
@@ -131,28 +140,46 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium">
-              {error}
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
           {testResult && (
             <div
-              className={`p-3 border text-xs rounded-lg font-medium flex items-center justify-between ${
+              className={`p-3.5 border text-xs rounded-xl font-medium flex items-center justify-between ${
                 testResult.is_reachable
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-rose-50 border-rose-200 text-rose-800'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-rose-50 border-rose-200 text-rose-900'
               }`}
             >
-              <span>
-                {testResult.is_reachable
-                  ? `Conexión exitosa. Versión: ${
-                      testResult.detected_version || 'Detectada'
-                    } | Latencia: ${testResult.latency_ms || 0}ms`
-                  : `Fallo de conexión: ${testResult.error_message || 'No alcanzable'}`}
-              </span>
-              {testResult.serial_number && (
-                <span className="font-mono text-[11px] bg-white/70 px-2 py-0.5 rounded">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>
+                    {testResult.is_reachable
+                      ? `Conexión exitosa. Versión: ${testResult.detected_version}`
+                      : `Fallo de conexión: ${testResult.error_message}`}
+                  </span>
+                </div>
+                {testResult.is_reachable && (
+                  <div className="flex items-center gap-2 text-[11px] text-emerald-700">
+                    {formData.has_vdom_enabled ? (
+                      <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md font-semibold">
+                        <Layers className="w-3 h-3" /> Multi-VDOM Autodetectado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-800 px-2 py-0.5 rounded-md font-semibold">
+                        <HardDrive className="w-3 h-3" /> Standalone / Simple Autodetectado
+                      </span>
+                    )}
+                    <span>• Latencia: {testResult.latency_ms || 0}ms</span>
+                  </div>
+                )}
+              </div>
+              {testResult.serial_number && testResult.serial_number !== 'Unknown' && (
+                <span className="font-mono text-[11px] bg-white/80 px-2 py-1 rounded-md border border-emerald-300">
                   SN: {testResult.serial_number}
                 </span>
               )}
@@ -169,35 +196,32 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Ej: FW-Core-Bogota"
+                placeholder="Ej: FW-Local-Bifrost"
                 className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
               />
             </div>
 
-            {/* CAMPO DE VERSIÓN AUTO-DETECTADO (OPCIÓN B) */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Versión FortiOS
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  disabled
-                  readOnly
-                  value={
-                    detectedVersionLabel
-                      ? `${detectedVersionLabel} (Auto)`
-                      : testingConnection
-                      ? 'Detectando...'
-                      : 'Auto-detectar (Test)'
-                  }
-                  className={`w-full text-xs px-3 py-2 border rounded-lg font-medium transition-all ${
-                    detectedVersionLabel
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
-                      : 'bg-gray-100 text-gray-500 border-gray-200'
-                  }`}
-                />
-              </div>
+              <input
+                type="text"
+                disabled
+                readOnly
+                value={
+                  detectedVersionLabel
+                    ? `${detectedVersionLabel} (Auto)`
+                    : testingConnection
+                    ? 'Detectando...'
+                    : 'Auto-detectar (Test)'
+                }
+                className={`w-full text-xs px-3 py-2 border rounded-lg font-medium transition-all ${
+                  detectedVersionLabel
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
+                    : 'bg-gray-100 text-gray-500 border-gray-200'
+                }`}
+              />
             </div>
           </div>
 
@@ -211,7 +235,7 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                 required
                 value={formData.host}
                 onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                placeholder="192.168.1.1 o firewall.empresa.com"
+                placeholder="172.20.69.249"
                 className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all font-mono"
               />
             </div>
@@ -237,56 +261,49 @@ export const CreateDeviceModal: React.FC<CreateDeviceModalProps> = ({
                 required
                 value={formData.api_token}
                 onChange={(e) => setFormData({ ...formData, api_token: e.target.value })}
-                placeholder="Pegar token generado en FortiOS Admin"
+                placeholder="Pegar token global generado en FortiOS Admin"
                 className="w-full text-sm px-3.5 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all font-mono"
               />
               <button
                 type="button"
                 onClick={handleTest}
                 disabled={testingConnection}
-                className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg border border-gray-300 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg border border-gray-300 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
               >
                 {testingConnection ? 'Probando...' : 'Test'}
               </button>
             </div>
           </div>
 
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-gray-800">Modo Multi-VDOM</span>
-                <p className="text-[11px] text-gray-500">
-                  Habilitar si el equipo particiona tráfico por VDOMs
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={formData.has_vdom_enabled}
-                onChange={(e) => setFormData({ ...formData, has_vdom_enabled: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-              />
-            </div>
-
-            {!formData.has_vdom_enabled && (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Cliente Asignado (Modo Standalone) *
-                </label>
-                <select
-                  value={formData.client_id || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, client_id: e.target.value || null })
-                  }
-                  className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                >
-                  <option value="">Seleccionar cliente...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.tax_id ? `(${c.tax_id})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* ASIGNACIÓN DE CLIENTE DEPENDIENDO DE LA TOPOLOGÍA AUTODETECTADA */}
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+            <label className="block text-xs font-medium text-gray-700">
+              {formData.has_vdom_enabled
+                ? 'Cliente Asignado a VDOM "root" (Opcional - Infraestructura / Operador)'
+                : 'Cliente Propietario (Equipo Standalone) *'}
+            </label>
+            <select
+              value={formData.client_id || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, client_id: e.target.value || null })
+              }
+              className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
+            >
+              <option value="">
+                {formData.has_vdom_enabled
+                  ? 'Sin asignar / Uso interno de administración'
+                  : 'Seleccionar cliente...'}
+              </option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.tax_id ? `(${c.tax_id})` : ''}
+                </option>
+              ))}
+            </select>
+            {formData.has_vdom_enabled && (
+              <p className="text-[11px] text-gray-500 italic">
+                Las particiones de clientes (ej. CONTABLE, LEGALES) se sincronizan y asignan en el menú de VDOMs tras registrar el equipo.
+              </p>
             )}
           </div>
 

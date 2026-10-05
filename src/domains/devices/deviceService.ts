@@ -6,6 +6,7 @@ import type {
   DeviceUpdateRequest,
   FortiOSVersionOption,
   TestConnectionRequest,
+  VDOMResponse,
 } from './device.types';
 
 export const deviceService = {
@@ -56,5 +57,22 @@ export const deviceService = {
     );
     return response.data;
   },
-};
 
+  // --- Operaciones de VDOMs mapeadas a vdoms.router.py ---
+  async getDeviceVDOMs(deviceId: string): Promise<VDOMResponse[]> {
+    const response = await apiClient.get<VDOMResponse[]>(`/vdoms/device/${deviceId}`);
+    return response.data;
+  },
+
+  async syncDeviceVDOMs(deviceId: string): Promise<unknown> {
+    const response = await apiClient.post(`/vdoms/device/${deviceId}/sync`);
+    return response.data;
+  },
+
+  async updateVDOMClient(vdomId: string, clientId: string | null): Promise<VDOMResponse> {
+    const response = await apiClient.patch<VDOMResponse>(`/vdoms/${vdomId}`, {
+      client_id: clientId,
+    });
+    return response.data;
+  },
+};

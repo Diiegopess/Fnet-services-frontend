@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { deviceService } from '../deviceService';
-import type { DeviceResponse } from '../device.types'
+import type { DeviceResponse } from '../device.types';
 import { parseApiError } from '../../../shared/utils/errorHandler';
 
 interface ClientDevicesModalProps {
@@ -45,8 +45,8 @@ export const ClientDevicesModal: React.FC<ClientDevicesModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-gray-100 zoom-in-95 duration-150">
         {/* Cabecera */}
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
           <div>
@@ -84,7 +84,7 @@ export const ClientDevicesModal: React.FC<ClientDevicesModalProps> = ({
 
           {!loading && !error && devices.length === 0 && (
             <div className="py-8 text-center text-sm text-gray-500 italic">
-              Este cliente no tiene dispositivos FortiGate asignados.
+              Este cliente no tiene particiones ni dispositivos FortiGate asignados.
             </div>
           )}
 
@@ -96,7 +96,7 @@ export const ClientDevicesModal: React.FC<ClientDevicesModalProps> = ({
                     <th className="px-3 py-2 rounded-l">Nombre</th>
                     <th className="px-3 py-2">Host / IP</th>
                     <th className="px-3 py-2">Versión</th>
-                    <th className="px-3 py-2">VDOMs</th>
+                    <th className="px-3 py-2">Modo</th>
                     <th className="px-3 py-2 text-center rounded-r">Estado</th>
                   </tr>
                 </thead>
@@ -104,13 +104,19 @@ export const ClientDevicesModal: React.FC<ClientDevicesModalProps> = ({
                   {devices.map((dev) => (
                     <tr key={dev.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2.5 font-medium text-gray-900">{dev.name}</td>
-                      <td className="px-3 py-2.5 font-mono text-gray-600">{dev.host}:{dev.port}</td>
+                      <td className="px-3 py-2.5 font-mono text-gray-600">
+                        {dev.host}:{dev.port}
+                      </td>
                       <td className="px-3 py-2.5">FortiOS {dev.fortios_version}</td>
                       <td className="px-3 py-2.5">
                         {dev.has_vdom_enabled ? (
-                          <span className="text-indigo-600 font-semibold">{dev.vdoms.length} VDOMs</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                            Multi-VDOM
+                          </span>
                         ) : (
-                          <span className="text-gray-400">Desactivado</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                            Standalone (Root)
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-center">
