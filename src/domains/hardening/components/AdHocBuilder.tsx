@@ -1,21 +1,18 @@
 // src/domains/hardening/components/AdHocBuilder.tsx
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
 import { ExecutionType, FindingStatus, RuleSeverity } from '../hardening.types';
 import { useHardening } from '../useHardening';
 import { hardeningService } from '../hardeningService';
+import { deviceService } from '../../devices/deviceService';
+import type { DeviceResponse, VDOMResponse } from '../../devices/device.types';
 import { compareRuleIds } from '../ruleOrdering';
-
-interface Device {
-  id: string;
-  name: string;
-  host: string;
-}
+import { RefreshCw, Layers } from 'lucide-react';
 
 interface AdHocBuilderProps {
   catalogRules?: RuleCatalogItem[];
-  devices?: Device[];
+  devices?: DeviceResponse[];
 }
 
 type SortField = 'rule_id' | 'status';
@@ -27,6 +24,10 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   devices = [],
 }) => {
   const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [selectedVDOM, setSelectedVDOM] = useState<string>('');
+  const [deviceVDOMs, setDeviceVDOMs] = useState<VDOMResponse[]>([]);
+  const [loadingVDOMs, setLoadingVDOMs] = useState<boolean>(false);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRules, setSelectedRules] = useState<RuleCatalogItem[]>([]);
 
@@ -58,11 +59,45 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
   const loading = localLoading || hookLoading;
 
+  const currentDeviceObj = useMemo(
+    () => devices.find((d) => d.id === selectedDevice),
+    [devices, selectedDevice]
+  );
+
+  // Manejo de carga reactiva de VDOMs
+  useEffect(() => {
+    setSelectedVDOM('');
+    setDeviceVDOMs([]);
+
+    if (!selectedDevice || !currentDeviceObj) return;
+
+    if (currentDeviceObj.has_vdom_enabled) {
+      setLoadingVDOMs(true);
+      deviceService
+        .getDeviceVDOMs(selectedDevice)
+        .then((vdomList) => {
+          setDeviceVDOMs(vdomList);
+          const rootVDOM = vdomList.find((v) => v.is_root);
+          if (rootVDOM) {
+            setSelectedVDOM(rootVDOM.id);
+          } else if (vdomList.length > 0) {
+            setSelectedVDOM(vdomList[0].id);
+          }
+        })
+        .catch((err) => {
+          console.error('Error al cargar VDOMs para Ad-hoc:', err);
+          setLocalError('No se pudieron recuperar las particiones del firewall seleccionado.');
+        })
+        .finally(() => setLoadingVDOMs(false));
+    }
+  }, [selectedDevice, currentDeviceObj]);
+
   // Manejo de carga de archivo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
-      setSelectedDevice(''); // Desmarca equipo en vivo si se sube archivo
+      setSelectedDevice('');
+      setSelectedVDOM('');
       setLocalError(null);
     }
   };
@@ -70,7 +105,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const handleDeviceChange = (deviceId: string) => {
     setSelectedDevice(deviceId);
     if (deviceId) {
-      setSelectedFile(null); // Desmarca archivo si se selecciona equipo
+      setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -80,7 +115,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Cálculo memoizado de reglas disponibles
+  // Reglas disponibles filtradas
   const availableRules = useMemo(() => {
     if (selectedRules.length === 0) return catalogRules;
     const selectedIds = new Set(
@@ -91,7 +126,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
       .sort((a, b) => compareRuleIds(a.id, b.id));
   }, [catalogRules, selectedRules]);
 
-  // Agrupación memoizada por estándar
+  // Agrupación por estándar
   const groupedAvailableRules = useMemo(() => {
     const groups: Record<string, RuleCatalogItem[]> = {};
     availableRules.forEach((rule) => {
@@ -148,7 +183,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     try {
       if (selectedFile) {
         setLocalLoading(true);
-        // Se envía undefined en standardVersion para permitir reglas mixtas de múltiples estándares
         const data = await hardeningService.auditBackupFile(
           selectedFile,
           undefined,
@@ -181,10 +215,12 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
         setReport(normalizedReport);
       } else {
-        const activeVersion = selectedRules[0]?.standard_version || 'v1.0.0';
+        const activeVersion = selectedRules[0]?.standard_version || 'v1.0.1';
+        
+        // Petición de auditoría en caliente pasando vdom_id y device_id
         const result = await executeAudit({
           device_id: selectedDevice,
-          raw_config: {},
+          vdom_id: selectedVDOM || undefined,
           execution_type: ExecutionType.CUSTOM_ADHOC,
           adhoc_rule_ids: ruleIds,
           standard_version: activeVersion,
@@ -193,14 +229,14 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
       }
 
       setExpandedRows({});
-    } catch (err: any) {
-      // Extracción limpia del error 422 o mensaje devuelto por FastAPI
-      const detail = err.response?.data?.detail;
-      const msg = typeof detail === 'string' 
-        ? detail 
-        : Array.isArray(detail) 
-        ? detail[0]?.msg 
-        : err.message;
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { detail?: string | { msg?: string }[] } }; message?: string };
+      const detail = errorObj.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+        ? detail[0]?.msg
+        : errorObj.message;
       setLocalError(msg || 'Error al ejecutar auditoría Ad-hoc');
     } finally {
       setLocalLoading(false);
@@ -248,14 +284,14 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Barra de Control Directa */}
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row gap-4 items-end justify-between">
+      {/* Barra de Control y Configuración Ad-hoc */}
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col lg:flex-row gap-4 items-end justify-between">
         
-        {/* Selector de Dispositivo y Botón de Backup Integrado */}
-        <div className="w-full md:w-2/3 flex flex-col sm:flex-row gap-3 items-end">
-          <div className="w-full sm:flex-1">
+        <div className="w-full lg:w-3/4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+          {/* Selector de Dispositivo */}
+          <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
-              Seleccionar Dispositivo (FortiGate)
+              Dispositivo Firewall
             </label>
             <select
               value={selectedDevice}
@@ -266,13 +302,46 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               <option value="">-- Seleccionar Equipo --</option>
               {devices.map((dev) => (
                 <option key={dev.id} value={dev.id}>
-                  {dev.name} ({dev.host})
+                  {dev.name} ({dev.host}) {dev.has_vdom_enabled ? '• [Multi-VDOM]' : ''}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="w-full sm:w-auto flex items-center gap-2">
+          {/* Selector de Partición / VDOM dependiente */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1 flex items-center justify-between">
+              <span>Partición / VDOM</span>
+              {loadingVDOMs && <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />}
+            </label>
+
+            {currentDeviceObj?.has_vdom_enabled && !selectedFile ? (
+              <select
+                value={selectedVDOM}
+                disabled={loadingVDOMs || deviceVDOMs.length === 0}
+                onChange={(e) => setSelectedVDOM(e.target.value)}
+                className="w-full p-2.5 bg-purple-50/50 border border-purple-200 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+              >
+                {deviceVDOMs.length === 0 ? (
+                  <option value="">(Sin particiones sincronizadas)</option>
+                ) : (
+                  deviceVDOMs.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} {v.is_root ? '★ [Admin Root]' : '• [Tráfico]'}
+                    </option>
+                  ))
+                )}
+              </select>
+            ) : (
+              <div className="w-full p-2.5 bg-gray-100 border border-gray-200 rounded-lg text-xs text-gray-500 flex items-center gap-1.5 cursor-not-allowed">
+                <Layers className="w-3.5 h-3.5 text-gray-400" />
+                <span>{selectedFile ? 'Modo Archivo Offline' : 'Monolítico (Root)'}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Selector de Archivo de Backup */}
+          <div className="flex items-center gap-2">
             <input
               type="file"
               ref={fileInputRef}
@@ -285,13 +354,13 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full sm:w-auto px-4 py-2.5 border border-gray-300 hover:border-blue-400 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 text-sm font-medium rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+                className="w-full px-4 py-2.5 border border-gray-300 hover:border-blue-400 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 text-sm font-medium rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
                 <span>Cargar Backup (.conf)</span>
               </button>
             ) : (
-              <div className="w-full sm:w-auto flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <span className="text-xs font-medium text-blue-800 truncate max-w-[160px]">
+              <div className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-xs font-medium text-blue-800 truncate max-w-[140px]">
                   📄 {selectedFile.name}
                 </span>
                 <button
@@ -307,21 +376,22 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
           </div>
         </div>
 
-        {/* Botón de Ejecución */}
+        {/* Botón de Ejecución Ad-hoc */}
         <button
           onClick={handleRunAdHocAudit}
           disabled={
             (!selectedDevice && !selectedFile) ||
+            (currentDeviceObj?.has_vdom_enabled && !selectedFile && !selectedVDOM) ||
             selectedRules.length === 0 ||
             loading
           }
-          className="w-full md:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
+          className="w-full lg:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
         >
           {loading ? (
             <span>Evaluando...</span>
           ) : (
             <>
-              <span>Ejecutar Evaluación Ad-hoc</span>
+              <span>Ejecutar Ad-hoc</span>
               <span className="bg-blue-800 px-2 py-0.5 rounded-full text-xs font-bold">
                 {selectedRules.length}
               </span>
@@ -343,10 +413,10 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
           <div className="flex justify-between items-center border-b border-gray-100 pb-3">
             <div>
               <h3 className="text-base font-bold text-gray-900">
-                Reglas para Evaluación Ad-hoc
+                Reglas Seleccionadas ({selectedRules.length})
               </h3>
               <p className="text-xs text-gray-500">
-                Haz clic en una regla para eliminarla del escaneo.
+                Haz clic en una regla para eliminarla del escaneo ad-hoc.
               </p>
             </div>
             <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full font-bold text-xs">
@@ -360,7 +430,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                 <span className="text-3xl mb-2">📥</span>
                 <p className="text-sm font-medium">Sin reglas seleccionadas</p>
                 <p className="text-xs">
-                  Haz clic en las reglas del panel derecho para armar tu escaneo.
+                  Haz clic en las reglas del panel derecho para agregarlas a la evaluación.
                 </p>
               </div>
             ) : (

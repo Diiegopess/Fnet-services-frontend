@@ -1,6 +1,6 @@
 // src/domains/hardening/components/AuditRunner.tsx
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   type HardeningProfile,
   type AuditReport,
@@ -11,16 +11,13 @@ import {
 } from '../hardening.types';
 import { useHardening } from '../useHardening';
 import { compareRuleIds } from '../ruleOrdering';
-
-interface Device {
-  id: string;
-  name: string;
-  host: string;
-}
+import { deviceService } from '../../devices/deviceService';
+import type { DeviceResponse, VDOMResponse } from '../../devices/device.types';
+import { RefreshCw, Layers } from 'lucide-react';
 
 interface AuditRunnerProps {
   profiles: HardeningProfile[];
-  devices: Device[];
+  devices: DeviceResponse[];
   catalogRules?: RuleCatalogItem[];
 }
 
@@ -34,7 +31,12 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
   catalogRules = [],
 }) => {
   const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [selectedVDOM, setSelectedVDOM] = useState<string>('');
   const [selectedProfile, setSelectedProfile] = useState<string>('');
+
+  // Estados para VDOMs dependientes
+  const [deviceVDOMs, setDeviceVDOMs] = useState<VDOMResponse[]>([]);
+  const [loadingVDOMs, setLoadingVDOMs] = useState<boolean>(false);
 
   // Estados para resultados y errores
   const [report, setReport] = useState<AuditReport | null>(null);
@@ -58,7 +60,41 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     error: hookError,
   } = useHardening();
 
-  // Manejador de ordenamiento
+  // Dispositivo actualmente seleccionado
+  const currentDeviceObj = useMemo(
+    () => devices.find((d) => d.id === selectedDevice),
+    [devices, selectedDevice]
+  );
+
+  // Carga reactiva de VDOMs al cambiar de dispositivo
+  useEffect(() => {
+    setSelectedVDOM('');
+    setDeviceVDOMs([]);
+
+    if (!selectedDevice || !currentDeviceObj) return;
+
+    if (currentDeviceObj.has_vdom_enabled) {
+      setLoadingVDOMs(true);
+      deviceService
+        .getDeviceVDOMs(selectedDevice)
+        .then((vdomList) => {
+          setDeviceVDOMs(vdomList);
+          // Si existe una partición root, seleccionarla por defecto
+          const rootVDOM = vdomList.find((v) => v.is_root);
+          if (rootVDOM) {
+            setSelectedVDOM(rootVDOM.id);
+          } else if (vdomList.length > 0) {
+            setSelectedVDOM(vdomList[0].id);
+          }
+        })
+        .catch((err) => {
+          console.error('Error al cargar VDOMs:', err);
+          setLocalError('No se pudieron recuperar las particiones del firewall seleccionado.');
+        })
+        .finally(() => setLoadingVDOMs(false));
+    }
+  }, [selectedDevice, currentDeviceObj]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -67,7 +103,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     }
   };
 
-  // Alternar acordeón desplegable en línea
   const toggleRowAccordion = (rowKey: string, tab: ExpandedTab) => {
     setExpandedRows((prev) => {
       const currentTab = prev[rowKey];
@@ -84,19 +119,29 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Ejecución de auditoría
+  // Ejecución de auditoría contextualizada
   const handleRunProfileAudit = async () => {
     if (!selectedDevice || !selectedProfile) return;
     setLocalError(null);
 
     const profileObj = profiles.find((p) => p.id === selectedProfile);
+    const targetVDOMObj = deviceVDOMs.find((v) => v.id === selectedVDOM);
 
     try {
       const result = await executeAudit({
         device_id: selectedDevice,
         profile_id: selectedProfile,
+        vdom_id: selectedVDOM || undefined,
         standard_version: profileObj?.standard_version || 'v1.0.1',
         execution_type: ExecutionType.ASSIGNED_PROFILE,
+        connection_data: targetVDOMObj
+          ? {
+              host: currentDeviceObj?.host || '',
+              port: currentDeviceObj?.port || 443,
+              token: '',
+              vdom: targetVDOMObj.name,
+            }
+          : undefined,
       });
       setReport(result);
       setExpandedRows({});
@@ -107,7 +152,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     }
   };
 
-  // Exportación
   const handleExport = async (format: ExportFormat) => {
     if (!report?.id) return;
     try {
@@ -118,12 +162,8 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
   };
 
   const activeError = localError || hookError;
-  const allFindings = useMemo(
-    () => report?.findings || [],
-    [report]
-  );
+  const allFindings = useMemo(() => report?.findings || [], [report]);
 
-  // Cumplimiento total
   const totalComplianceScore = useMemo(() => {
     if (!report) return 0;
     if (report.score !== undefined && report.score !== null) {
@@ -135,7 +175,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     return Math.round((passed / total) * 100);
   }, [report, allFindings]);
 
-  // Filtrado y Ordenamiento
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
@@ -144,18 +183,15 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
 
     return [...filtered].sort((a, b) => {
       let comparison = 0;
-
       if (sortField === 'rule_id') {
         comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
         comparison = (a.status || '').localeCompare(b.status || '');
       }
-
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [allFindings, filterStatus, sortField, sortDirection]);
 
-  // Función auxiliar para renderizar badges de estado
   const renderStatusBadge = (status: string) => {
     switch (status) {
       case 'PASSED':
@@ -187,12 +223,13 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Panel de Control y Selección */}
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row gap-4 items-end justify-between">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full md:w-3/4">
+      {/* Panel de Selección con VDOM dependiente */}
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col lg:flex-row gap-4 items-end justify-between">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full lg:w-4/5">
+          {/* 1. Selector de Dispositivo */}
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
-              Seleccionar Dispositivo
+              Dispositivo Firewall
             </label>
             <select
               value={selectedDevice}
@@ -202,12 +239,45 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               <option value="">-- Seleccionar Equipo --</option>
               {devices.map((dev) => (
                 <option key={dev.id} value={dev.id}>
-                  {dev.name} ({dev.host})
+                  {dev.name} ({dev.host}) {dev.has_vdom_enabled ? '• [Multi-VDOM]' : ''}
                 </option>
               ))}
             </select>
           </div>
 
+          {/* 2. Selector de Partición / VDOM (Condicional) */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1 flex items-center justify-between">
+              <span>Partición / VDOM</span>
+              {loadingVDOMs && <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />}
+            </label>
+
+            {currentDeviceObj?.has_vdom_enabled ? (
+              <select
+                value={selectedVDOM}
+                disabled={loadingVDOMs || deviceVDOMs.length === 0}
+                onChange={(e) => setSelectedVDOM(e.target.value)}
+                className="w-full p-2.5 bg-purple-50/50 border border-purple-200 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+              >
+                {deviceVDOMs.length === 0 ? (
+                  <option value="">(Sin particiones sincronizadas)</option>
+                ) : (
+                  deviceVDOMs.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} {v.is_root ? '★ [Admin Root]' : '• [Tráfico]'}
+                    </option>
+                  ))
+                )}
+              </select>
+            ) : (
+              <div className="w-full p-2.5 bg-gray-100 border border-gray-200 rounded-lg text-xs text-gray-500 flex items-center gap-1.5 cursor-not-allowed">
+                <Layers className="w-3.5 h-3.5 text-gray-400" />
+                <span>Monolítico (Root por defecto)</span>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Selector de Perfil de Hardening */}
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
               Perfil de Hardening
@@ -229,10 +299,15 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
 
         <button
           onClick={handleRunProfileAudit}
-          disabled={!selectedDevice || !selectedProfile || loading}
-          className="w-full md:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
+          disabled={
+            !selectedDevice ||
+            !selectedProfile ||
+            loading ||
+            (currentDeviceObj?.has_vdom_enabled && !selectedVDOM)
+          }
+          className="w-full lg:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
         >
-          {loading ? <span>Evaluando Perfil...</span> : <span>Ejecutar Evaluación</span>}
+          {loading ? <span>Evaluando...</span> : <span>Ejecutar Evaluación</span>}
         </button>
       </div>
 
@@ -357,11 +432,15 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
-                  const ruleCompliance = finding.compliance_score ?? (finding.status === 'PASSED' ? 100 : finding.status === 'PARCIAL' ? 50 : 0);
+                  const ruleCompliance =
+                    finding.compliance_score ??
+                    (finding.status === 'PASSED'
+                      ? 100
+                      : finding.status === 'PARCIAL'
+                      ? 50
+                      : 0);
 
-                  const matchedRule = catalogRules.find(
-                    (r) => r.id === finding.rule_id
-                  );
+                  const matchedRule = catalogRules.find((r) => r.id === finding.rule_id);
                   const ruleName = finding.rule_name || matchedRule?.name || finding.rule_id;
                   const ruleDesc = matchedRule?.description || finding.reason || 'Sin descripción disponible';
                   const ruleSeverity = finding.severity || matchedRule?.default_severity || 'MEDIUM';
@@ -399,8 +478,8 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                               ruleCompliance === 100
                                 ? 'text-green-700'
                                 : ruleCompliance >= 50
-                                  ? 'text-amber-600'
-                                  : 'text-red-600'
+                                ? 'text-amber-600'
+                                : 'text-red-600'
                             }`}
                           >
                             {ruleCompliance}%
@@ -446,7 +525,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                         </td>
                       </tr>
 
-                      {/* FILA EXPANDIDA TIPO ACORDEÓN */}
+                      {/* FILA EXPANDIDA */}
                       {activeTab && (
                         <tr className="bg-slate-50/80 border-b border-gray-200">
                           <td colSpan={6} className="px-6 py-4">
