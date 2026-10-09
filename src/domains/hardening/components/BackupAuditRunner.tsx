@@ -329,7 +329,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                 {processedFindings.map((finding: Finding, idx: number) => {
                   const ruleCompliance =
                     finding.compliance_score ??
-                    (finding.status === 'PASSED' ? 100 : finding.status === 'PARCIAL' ? 50 : 0);
+                    (finding.status === 'PASSED' ? 100 : finding.status === 'PARTIAL' ? 50 : 0);
 
                   const matchedRule = catalogRules.find((r) => r.id === finding.rule_id);
                   const ruleName = finding.rule_name || matchedRule?.name || finding.rule_id;

@@ -436,7 +436,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                     finding.compliance_score ??
                     (finding.status === 'PASSED'
                       ? 100
-                      : finding.status === 'PARCIAL'
+                      : finding.status === 'PARTIAL'
                       ? 50
                       : 0);
 

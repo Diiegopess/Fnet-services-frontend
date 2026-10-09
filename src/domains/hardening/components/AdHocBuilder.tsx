@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
-import { ExecutionType, FindingStatus, RuleSeverity } from '../hardening.types';
+import { ExecutionType, FindingStatus, RuleSeverity, RuleScope } from '../hardening.types';
 import { useHardening } from '../useHardening';
 import { hardeningService } from '../hardeningService';
 import { deviceService } from '../../devices/deviceService';
@@ -216,8 +216,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
         setReport(normalizedReport);
       } else {
         const activeVersion = selectedRules[0]?.standard_version || 'v1.0.1';
-        
-        // Petición de auditoría en caliente pasando vdom_id y device_id
+
         const result = await executeAudit({
           device_id: selectedDevice,
           vdom_id: selectedVDOM || undefined,
@@ -260,9 +259,11 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     if (typeof report.score === 'number') {
       return Math.round(report.score);
     }
-    if (allFindings.length === 0) return 0;
-    const passed = allFindings.filter((f) => f.status === FindingStatus.PASSED).length;
-    return Math.round((passed / allFindings.length) * 100);
+    // Excluir reglas NOT_APPLICABLE para no falsear el denominador
+    const applicableFindings = allFindings.filter((f) => f.status !== FindingStatus.NOT_APPLICABLE);
+    if (applicableFindings.length === 0) return 0;
+    const passed = applicableFindings.filter((f) => f.status === FindingStatus.PASSED).length;
+    return Math.round((passed / applicableFindings.length) * 100);
   }, [report, allFindings]);
 
   const processedFindings = useMemo(() => {
@@ -286,7 +287,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     <div className="space-y-6">
       {/* Barra de Control y Configuración Ad-hoc */}
       <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col lg:flex-row gap-4 items-end justify-between">
-        
         <div className="w-full lg:w-3/4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
           {/* Selector de Dispositivo */}
           <div>
@@ -447,9 +447,20 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                         {rule.id}
                       </span>
                       <div>
-                        <p className="text-xs font-semibold text-gray-800">
-                          {rule.name}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold text-gray-800">{rule.name}</p>
+                          {rule.scope && (
+                            <span
+                              className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                                rule.scope === RuleScope.GLOBAL
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-purple-100 text-purple-800 border border-purple-200'
+                              }`}
+                            >
+                              {rule.scope}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-gray-400 uppercase font-medium">
                           {rule.standard} {rule.standard_version}
                         </span>
@@ -478,9 +489,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               >
                 <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex justify-between">
                   <span>{groupTitle}</span>
-                  <span className="text-gray-400 font-normal">
-                    ({rulesGroup.length})
-                  </span>
+                  <span className="text-gray-400 font-normal">({rulesGroup.length})</span>
                 </h4>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {[...rulesGroup]
@@ -491,12 +500,25 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                         onClick={() => addRule(rule)}
                         className="p-2 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-md flex justify-between items-center cursor-pointer transition-colors"
                       >
-                        <span className="font-mono text-xs font-bold text-gray-700">
-                          {rule.id}
-                        </span>
-                        <span className="text-xs text-gray-600 truncate max-w-[220px]">
-                          {rule.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-gray-700">
+                            {rule.id}
+                          </span>
+                          <span className="text-xs text-gray-600 truncate max-w-[190px]">
+                            {rule.name}
+                          </span>
+                          {rule.scope && (
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                rule.scope === RuleScope.GLOBAL
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-purple-50 text-purple-700 border border-purple-200'
+                              }`}
+                            >
+                              {rule.scope}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-xs font-bold text-blue-600">+</span>
                       </div>
                     ))}
@@ -512,13 +534,9 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs space-y-6 mt-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
             <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Resultados de la Auditoría Ad-hoc
-              </h3>
+              <h3 className="text-lg font-bold text-gray-900">Resultados de la Auditoría Ad-hoc</h3>
               <p className="text-xs text-gray-500">
-                {selectedFile
-                  ? `Origen: ${selectedFile.name}`
-                  : `ID Auditoría: ${report.id}`}
+                {selectedFile ? `Origen: ${selectedFile.name}` : `ID Auditoría: ${report.id}`}
               </p>
             </div>
 
@@ -552,7 +570,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
             <div className="p-3 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200">
               Aprobadas:{' '}
               {report.total_passed ??
@@ -563,6 +581,11 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               {report.total_failed ??
                 allFindings.filter((f) => f.status === FindingStatus.FAILED).length}
             </div>
+            <div className="p-3 bg-slate-100 text-slate-700 rounded-lg font-semibold border border-slate-300">
+              No Aplica (N/A):{' '}
+              {report.total_not_applicable ??
+                allFindings.filter((f) => f.status === FindingStatus.NOT_APPLICABLE).length}
+            </div>
             <div className="p-3 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200">
               Evaluadas: {allFindings.length}
             </div>
@@ -572,28 +595,26 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
             <h4 className="text-sm font-bold text-gray-800">
               Detalle por Regla ({processedFindings.length})
             </h4>
-            <div className="flex gap-2 text-xs">
-              {['ALL', FindingStatus.PASSED, FindingStatus.PARCIAL, FindingStatus.FAILED].map(
-                (st) => (
-                  <button
-                    key={st}
-                    onClick={() => setFilterStatus(st)}
-                    className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
-                      filterStatus === st
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-gray-100 text-gray-600 border-gray-300'
-                    }`}
-                  >
-                    {st === 'ALL'
-                      ? 'Todas'
-                      : st === FindingStatus.PASSED
-                      ? 'Pasaron'
-                      : st === FindingStatus.PARCIAL
-                      ? 'Parciales'
-                      : 'Fallaron'}
-                  </button>
-                )
-              )}
+            <div className="flex flex-wrap gap-2 text-xs">
+              {[
+                { key: 'ALL', label: 'Todas' },
+                { key: FindingStatus.PASSED, label: 'Pasaron' },
+                { key: FindingStatus.PARTIAL, label: 'Parciales' },
+                { key: FindingStatus.FAILED, label: 'Fallaron' },
+                { key: FindingStatus.NOT_APPLICABLE, label: 'No Aplica' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setFilterStatus(key)}
+                  className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
+                    filterStatus === key
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -636,9 +657,12 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
                   const isPassed = finding.status === FindingStatus.PASSED;
-                  const isPartial = finding.status === FindingStatus.PARCIAL;
+                  const isPartial = finding.status === FindingStatus.PARTIAL;
+                  const isNotApplicable = finding.status === FindingStatus.NOT_APPLICABLE;
+
                   const ruleCompliance =
-                    finding.compliance_score ?? (isPassed ? 100 : isPartial ? 50 : 0);
+                    finding.compliance_score ??
+                    (isPassed ? 100 : isPartial ? 50 : 0);
 
                   const matchedRule = catalogRules.find(
                     (r) => r.id === finding.rule_id
@@ -685,24 +709,28 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                                 ? 'bg-green-100 text-green-800 border border-green-300'
                                 : isPartial
                                 ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                : isNotApplicable
+                                ? 'bg-slate-100 text-slate-700 border border-slate-300'
                                 : 'bg-red-100 text-red-800 border border-red-300'
                             }`}
                           >
-                            {finding.status}
+                            {isNotApplicable ? 'NOT APPLICABLE' : finding.status}
                           </span>
                         </td>
 
                         <td className="px-4 py-3 align-top">
                           <span
                             className={`font-mono text-xs font-bold ${
-                              ruleCompliance === 100
+                              isNotApplicable
+                                ? 'text-slate-500'
+                                : ruleCompliance === 100
                                 ? 'text-green-700'
                                 : ruleCompliance > 0
                                 ? 'text-amber-600'
                                 : 'text-red-600'
                             }`}
                           >
-                            {ruleCompliance}%
+                            {isNotApplicable ? 'N/A' : `${ruleCompliance}%`}
                           </span>
                         </td>
 
@@ -719,7 +747,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                               expandedCell === currentCellId ? '' : 'line-clamp-3'
                             }
                           >
-                            {finding.current_value || 'N/A'}
+                            {finding.current_value || (isNotApplicable ? 'Regla de Chasis omitida para esta VDOM' : 'N/A')}
                           </div>
                         </td>
 
@@ -736,12 +764,12 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                               expandedCell === expectedCellId ? '' : 'line-clamp-3'
                             }
                           >
-                            {finding.expected_value || 'N/A'}
+                            {finding.expected_value || (isNotApplicable ? 'N/A' : 'N/A')}
                           </div>
                         </td>
 
                         <td className="px-4 py-3 align-top text-right">
-                          {!isPassed && finding.remediation_cmd && (
+                          {!isPassed && !isNotApplicable && finding.remediation_cmd && (
                             <button
                               onClick={() =>
                                 toggleRowAccordion(rowKey, 'remediation')
@@ -779,7 +807,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                                   >
                                     Detalle del Control
                                   </button>
-                                  {finding.remediation_cmd && (
+                                  {finding.remediation_cmd && !isNotApplicable && (
                                     <button
                                       onClick={() =>
                                         toggleRowAccordion(rowKey, 'remediation')
@@ -817,6 +845,17 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                                     <h5 className="font-bold text-gray-900 text-sm">
                                       {ruleName}
                                     </h5>
+                                    {matchedRule?.scope && (
+                                      <span
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                          matchedRule.scope === RuleScope.GLOBAL
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-purple-100 text-purple-800'
+                                        }`}
+                                      >
+                                        Ámbito: {matchedRule.scope}
+                                      </span>
+                                    )}
                                     <span className="ml-auto uppercase text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
                                       Severidad: {ruleSeverity}
                                     </span>

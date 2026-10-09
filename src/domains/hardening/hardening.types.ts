@@ -10,7 +10,7 @@ export type ExecutionType = (typeof ExecutionType)[keyof typeof ExecutionType];
 
 export const FindingStatus = {
   PASSED: 'PASSED',
-  PARCIAL: 'PARCIAL', // Coincide con backend Enum
+  PARTIAL: 'PARTIAL', // Corregido: coincide con backend Enum en models.py
   FAILED: 'FAILED',
   NOT_APPLICABLE: 'NOT_APPLICABLE',
 } as const;
@@ -25,6 +25,13 @@ export const RuleSeverity = {
 } as const;
 
 export type RuleSeverity = (typeof RuleSeverity)[keyof typeof RuleSeverity];
+
+export const RuleScope = {
+  GLOBAL: 'GLOBAL',
+  VDOM: 'VDOM',
+} as const;
+
+export type RuleScope = (typeof RuleScope)[keyof typeof RuleScope];
 
 export const OperatorType = {
   EQUALS: 'EQUALS',
@@ -46,12 +53,12 @@ export interface DynamicConditionSchema {
 }
 
 export interface AuditExecutionPayload {
-  device_id: string;
+  device_id?: string; // Opcional si se envía vdom_id
+  vdom_id?: string;
   execution_type: ExecutionType;
-  raw_config?: Record<string, unknown>; // Corregido: Dict/JSON para FastAPI
+  raw_config?: Record<string, unknown>;
   profile_id?: string;
   adhoc_rule_ids?: string[];
-  vdom_id?: string;
   standard_version?: string;
   connection_data?: {
     host: string;
@@ -116,6 +123,7 @@ export interface RuleCatalogItem {
   category: string;
   standard: string;
   default_severity: RuleSeverity;
+  scope: RuleScope; // Agregado: GLOBAL | VDOM
   is_active: boolean;
   required_endpoint?: string;
   condition_schema?: DynamicConditionSchema;
@@ -140,6 +148,7 @@ export interface HardeningProfile {
 
 export interface FetchReportsParams {
   device_id?: string;
+  vdom_id?: string;
   limit?: number;
   offset?: number;
 }

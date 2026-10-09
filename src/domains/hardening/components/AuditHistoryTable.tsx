@@ -426,7 +426,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   <tbody className="divide-y divide-gray-200">
                     {sortedFindings.map((f, idx) => {
                       const isPassed = f.status === FindingStatus.PASSED;
-                      const isPartial = f.status === FindingStatus.PARCIAL;
+                      const isPartial = f.status === FindingStatus.PARTIAL;
                       const ruleCompliance = f.compliance_score ?? (isPassed ? 100 : isPartial ? 50 : 0);
                       
                       const currentCellId = `current-${idx}`;
