@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { RuleCatalogItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
-import { ExecutionType, FindingStatus, RuleSeverity, RuleScope } from '../hardening.types';
+import { ExecutionType, FindingStatus, RuleSeverity } from '../hardening.types';
 import { useHardening } from '../useHardening';
 import { hardeningService } from '../hardeningService';
 import { deviceService } from '../../devices/deviceService';
@@ -507,20 +507,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                         {rule.id}
                       </span>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-semibold text-gray-800">{rule.name}</p>
-                          {rule.scope && (
-                            <span
-                              className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
-                                rule.scope === RuleScope.GLOBAL
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : 'bg-purple-100 text-purple-800 border border-purple-200'
-                              }`}
-                            >
-                              {rule.scope}
-                            </span>
-                          )}
-                        </div>
+                        <p className="text-xs font-semibold text-gray-800">{rule.name}</p>
                         <span className="text-[10px] text-gray-400 uppercase font-medium">
                           {rule.standard} {rule.standard_version}
                         </span>
@@ -564,20 +551,9 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                           <span className="font-mono text-xs font-bold text-gray-700">
                             {rule.id}
                           </span>
-                          <span className="text-xs text-gray-600 truncate max-w-[190px]">
+                          <span className="text-xs text-gray-600 truncate max-w-[240px]">
                             {rule.name}
                           </span>
-                          {rule.scope && (
-                            <span
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                rule.scope === RuleScope.GLOBAL
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                  : 'bg-purple-50 text-purple-700 border border-purple-200'
-                              }`}
-                            >
-                              {rule.scope}
-                            </span>
-                          )}
                         </div>
                         <span className="text-xs font-bold text-blue-600">+</span>
                       </div>
@@ -719,7 +695,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                     finding.compliance_score ??
                     (effectiveStatus === 'PASSED'
                       ? 100
-                      : effectiveStatus === 'PARTIAL'
+                      : effectiveStatus === 'PARCIAL'
                       ? 50
                       : 0);
 
@@ -894,17 +870,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                                     <h5 className="font-bold text-gray-900 text-sm">
                                       {ruleName}
                                     </h5>
-                                    {matchedRule?.scope && (
-                                      <span
-                                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                          matchedRule.scope === RuleScope.GLOBAL
-                                            ? 'bg-amber-100 text-amber-800'
-                                            : 'bg-purple-100 text-purple-800'
-                                        }`}
-                                      >
-                                        Ámbito: {matchedRule.scope}
-                                      </span>
-                                    )}
                                     <span className="ml-auto uppercase text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
                                       Severidad: {ruleSeverity}
                                     </span>
