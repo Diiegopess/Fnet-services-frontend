@@ -6,7 +6,9 @@ import {
   type BackupAuditResponse,
   type Finding,
   type RuleCatalogItem,
+  FindingStatus,
   RuleSeverity,
+  RuleScope,
 } from '../hardening.types';
 import { hardeningService } from '../hardeningService';
 import { compareRuleIds } from '../ruleOrdering';
@@ -52,6 +54,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
+      setSortDirection('asc');
     }
   };
 
@@ -113,10 +116,60 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
 
   const allFindings = useMemo(() => result?.findings || [], [result]);
 
+  // Helper para resolver el estado efectivo considerando porcentajes intermedios
+  const getEffectiveStatus = (finding: Finding): string => {
+    if (finding.status === FindingStatus.NOT_APPLICABLE) return 'NOT_APPLICABLE';
+    if (finding.status === FindingStatus.PASSED) return 'PASSED';
+    if (finding.status === FindingStatus.PARTIAL) return 'PARCIAL';
+
+    const score = finding.compliance_score;
+    if (score !== undefined && score !== null && score > 0 && score < 100) {
+      return 'PARCIAL';
+    }
+    return 'FAILED';
+  };
+
+  // Contadores normalizados
+  const countPassed = useMemo(() => {
+    if (!result) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PASSED').length;
+  }, [result, allFindings]);
+
+  const countPartial = useMemo(() => {
+    if (!result) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PARCIAL').length;
+  }, [result, allFindings]);
+
+  const countFailed = useMemo(() => {
+    if (!result) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'FAILED').length;
+  }, [result, allFindings]);
+
+  const countNotApplicable = useMemo(() => {
+    if (!result) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'NOT_APPLICABLE').length;
+  }, [result, allFindings]);
+
+  const totalComplianceScore = useMemo(() => {
+    if (!result) return 0;
+    if (typeof result.score === 'number') {
+      return Math.round(result.score);
+    }
+    const evaluable = allFindings.filter((f) => getEffectiveStatus(f) !== 'NOT_APPLICABLE');
+    if (evaluable.length === 0) return 100;
+    const sum = evaluable.reduce((acc, f) => {
+      const s =
+        f.compliance_score ??
+        (getEffectiveStatus(f) === 'PASSED' ? 100 : getEffectiveStatus(f) === 'PARCIAL' ? 50 : 0);
+      return acc + s;
+    }, 0);
+    return Math.round(sum / evaluable.length);
+  }, [result, allFindings]);
+
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
-      return f.status === filterStatus;
+      return getEffectiveStatus(f) === filterStatus;
     });
 
     return [...filtered].sort((a, b) => {
@@ -124,14 +177,14 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
       if (sortField === 'rule_id') {
         comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
-        comparison = (a.status || '').localeCompare(b.status || '');
+        comparison = getEffectiveStatus(a).localeCompare(getEffectiveStatus(b));
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [allFindings, filterStatus, sortField, sortDirection]);
 
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
+  const renderStatusBadge = (effectiveStatus: string) => {
+    switch (effectiveStatus) {
       case 'PASSED':
         return (
           <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
@@ -240,38 +293,42 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
             <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl">
               <div>
                 <p className="text-xs font-bold text-blue-900 uppercase">Cumplimiento Total</p>
-                <p className="text-2xl font-black text-blue-700">{Math.round(result.score)}%</p>
+                <p className="text-2xl font-black text-blue-700">{totalComplianceScore}%</p>
               </div>
             </div>
           </div>
 
-          {/* Estadísticas de reglas */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+          {/* Tarjetas de Métricas Completas (5 columnas) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200">
-              Aprobadas: {result.total_passed}
+              Aprobadas: {countPassed}
             </div>
             <div className="p-3 bg-amber-50 text-amber-700 rounded-lg font-semibold border border-amber-200">
-              Parciales: {result.total_partial}
+              Parciales: {countPartial}
             </div>
             <div className="p-3 bg-red-50 text-red-700 rounded-lg font-semibold border border-red-200">
-              Fallidas: {result.total_failed}
+              Fallidas: {countFailed}
             </div>
-            <div className="p-3 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200">
+            <div className="p-3 bg-gray-100 text-gray-700 rounded-lg font-semibold border border-gray-300">
+              No Aplican: {countNotApplicable}
+            </div>
+            <div className="p-3 bg-blue-50 text-blue-700 rounded-lg font-semibold border border-blue-200">
               Evaluadas: {allFindings.length}
             </div>
           </div>
 
           {/* Filtros de la tabla */}
-          <div className="flex justify-between items-center pt-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
             <h4 className="text-sm font-bold text-gray-800">
               Detalle por Regla ({processedFindings.length})
             </h4>
-            <div className="flex gap-2 text-xs">
+            <div className="flex flex-wrap gap-1.5 text-xs">
               {[
                 { id: 'ALL', label: 'Todas' },
                 { id: 'PASSED', label: 'Aprobadas' },
                 { id: 'PARCIAL', label: 'Parciales' },
                 { id: 'FAILED', label: 'Fallidas' },
+                { id: 'NOT_APPLICABLE', label: 'No Aplican' },
               ].map((st) => (
                 <button
                   key={st.id}
@@ -279,7 +336,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                   className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
                     filterStatus === st.id
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
                   }`}
                 >
                   {st.label}
@@ -327,9 +384,14 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
+                  const effectiveStatus = getEffectiveStatus(finding);
                   const ruleCompliance =
                     finding.compliance_score ??
-                    (finding.status === 'PASSED' ? 100 : finding.status === 'PARTIAL' ? 50 : 0);
+                    (effectiveStatus === 'PASSED'
+                      ? 100
+                      : effectiveStatus === 'PARCIAL'
+                      ? 50
+                      : 0);
 
                   const matchedRule = catalogRules.find((r) => r.id === finding.rule_id);
                   const ruleName = finding.rule_name || matchedRule?.name || finding.rule_id;
@@ -361,20 +423,22 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                         </td>
 
                         <td className="px-4 py-3 align-top">
-                          {renderStatusBadge(finding.status)}
+                          {renderStatusBadge(effectiveStatus)}
                         </td>
 
                         <td className="px-4 py-3 align-top">
                           <span
                             className={`font-mono text-xs font-bold ${
-                              ruleCompliance === 100
+                              effectiveStatus === 'NOT_APPLICABLE'
+                                ? 'text-slate-500'
+                                : ruleCompliance === 100
                                 ? 'text-green-700'
-                                : ruleCompliance >= 50
+                                : ruleCompliance >= 35 || ruleCompliance > 0
                                 ? 'text-amber-600'
                                 : 'text-red-600'
                             }`}
                           >
-                            {ruleCompliance}%
+                            {effectiveStatus === 'NOT_APPLICABLE' ? 'N/A' : `${ruleCompliance}%`}
                           </span>
                         </td>
 
@@ -383,9 +447,13 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                             setExpandedCell((prev) => (prev === currentCellId ? null : currentCellId))
                           }
                           className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar la evidencia completa"
                         >
                           <div className={expandedCell === currentCellId ? '' : 'line-clamp-3'}>
-                            {finding.current_value || 'N/A'}
+                            {finding.current_value ||
+                              (effectiveStatus === 'NOT_APPLICABLE'
+                                ? 'Regla de Chasis omitida para esta VDOM'
+                                : 'N/A')}
                           </div>
                         </td>
 
@@ -394,6 +462,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                             setExpandedCell((prev) => (prev === expectedCellId ? null : expectedCellId))
                           }
                           className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar el valor esperado"
                         >
                           <div className={expandedCell === expectedCellId ? '' : 'line-clamp-3'}>
                             {finding.expected_value || 'N/A'}
@@ -401,21 +470,23 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                         </td>
 
                         <td className="px-4 py-3 align-top text-right">
-                          {finding.status !== 'PASSED' && finding.remediation_cmd && (
-                            <button
-                              onClick={() => toggleRowAccordion(rowKey, 'remediation')}
-                              className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
-                                activeTab === 'remediation'
-                                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                                  : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
-                              }`}
-                            >
-                              <span>Remediación</span>
-                              <span className="text-xs">
-                                {activeTab === 'remediation' ? '▲' : '▼'}
-                              </span>
-                            </button>
-                          )}
+                          {effectiveStatus !== 'PASSED' &&
+                            effectiveStatus !== 'NOT_APPLICABLE' &&
+                            finding.remediation_cmd && (
+                              <button
+                                onClick={() => toggleRowAccordion(rowKey, 'remediation')}
+                                className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
+                                  activeTab === 'remediation'
+                                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                                    : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
+                                }`}
+                              >
+                                <span>Remediación</span>
+                                <span className="text-xs">
+                                  {activeTab === 'remediation' ? '▲' : '▼'}
+                                </span>
+                              </button>
+                            )}
                         </td>
                       </tr>
 
@@ -435,7 +506,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                                   >
                                     Detalle del Control
                                   </button>
-                                  {finding.remediation_cmd && (
+                                  {finding.remediation_cmd && effectiveStatus !== 'NOT_APPLICABLE' && (
                                     <button
                                       onClick={() => toggleRowAccordion(rowKey, 'remediation')}
                                       className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
@@ -450,9 +521,7 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                                 </div>
 
                                 <button
-                                  onClick={() =>
-                                    setExpandedRows((prev) => ({ ...prev, [rowKey]: null }))
-                                  }
+                                  onClick={() => setExpandedRows((prev) => ({ ...prev, [rowKey]: null }))}
                                   className="text-xs text-gray-400 hover:text-gray-700 cursor-pointer flex items-center gap-1 font-medium"
                                 >
                                   Contraer ✕
@@ -466,10 +535,22 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                                       {finding.rule_id}
                                     </span>
                                     <h5 className="font-bold text-gray-900 text-sm">{ruleName}</h5>
+                                    {matchedRule?.scope && (
+                                      <span
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                          matchedRule.scope === RuleScope.GLOBAL
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-purple-100 text-purple-800'
+                                        }`}
+                                      >
+                                        Ámbito: {matchedRule.scope}
+                                      </span>
+                                    )}
                                     <span className="ml-auto uppercase text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
                                       Severidad: {ruleSeverity}
                                     </span>
                                   </div>
+
                                   <div>
                                     <p className="font-semibold text-gray-500 uppercase tracking-wider mb-1 text-[11px]">
                                       Descripción y Objetivo de Auditoría:
@@ -498,10 +579,9 @@ export const BackupAuditRunner: React.FC<BackupAuditRunnerProps> = ({
                                       )}
                                     </button>
                                   </div>
+
                                   <div className="p-3 bg-gray-900 text-amber-300 font-mono text-xs rounded-lg overflow-x-auto border border-gray-800 shadow-inner">
-                                    <pre className="whitespace-pre-wrap leading-relaxed">
-                                      {finding.remediation_cmd}
-                                    </pre>
+                                    <pre className="whitespace-pre-wrap leading-relaxed">{finding.remediation_cmd}</pre>
                                   </div>
                                 </div>
                               )}

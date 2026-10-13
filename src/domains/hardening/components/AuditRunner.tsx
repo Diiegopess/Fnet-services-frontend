@@ -79,7 +79,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
         .getDeviceVDOMs(selectedDevice)
         .then((vdomList) => {
           setDeviceVDOMs(vdomList);
-          // Si existe una partición root, seleccionarla por defecto
           const rootVDOM = vdomList.find((v) => v.is_root);
           if (rootVDOM) {
             setSelectedVDOM(rootVDOM.id);
@@ -119,7 +118,6 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Ejecución de auditoría contextualizada
   const handleRunProfileAudit = async () => {
     if (!selectedDevice || !selectedProfile) return;
     setLocalError(null);
@@ -164,21 +162,59 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
   const activeError = localError || hookError;
   const allFindings = useMemo(() => report?.findings || [], [report]);
 
+  // Helper para resolver el estado efectivo considerando porcentajes intermedios
+  const getEffectiveStatus = (finding: Finding): string => {
+    if (finding.status === 'NOT_APPLICABLE') return 'NOT_APPLICABLE';
+    if (finding.status === 'PASSED') return 'PASSED';
+    if (finding.status === 'PARTIAL') return 'PARCIAL';
+    
+    const score = finding.compliance_score;
+    if (score !== undefined && score !== null && score > 0 && score < 100) {
+      return 'PARCIAL';
+    }
+    return 'FAILED';
+  };
+
+  // Contadores normalizados
+  const countPassed = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PASSED').length;
+  }, [report, allFindings]);
+
+  const countPartial = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PARCIAL').length;
+  }, [report, allFindings]);
+
+  const countFailed = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'FAILED').length;
+  }, [report, allFindings]);
+
+  const countNotApplicable = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'NOT_APPLICABLE').length;
+  }, [report, allFindings]);
+
   const totalComplianceScore = useMemo(() => {
     if (!report) return 0;
     if (report.score !== undefined && report.score !== null) {
       return Math.round(report.score);
     }
-    const total = allFindings.length;
-    if (total === 0) return 0;
-    const passed = report.total_passed ?? allFindings.filter((f) => f.status === 'PASSED').length;
-    return Math.round((passed / total) * 100);
+    const evaluable = allFindings.filter((f) => getEffectiveStatus(f) !== 'NOT_APPLICABLE');
+    if (evaluable.length === 0) return 100;
+    const sum = evaluable.reduce((acc, f) => {
+      const s = f.compliance_score ?? (getEffectiveStatus(f) === 'PASSED' ? 100 : getEffectiveStatus(f) === 'PARCIAL' ? 50 : 0);
+      return acc + s;
+    }, 0);
+    return Math.round(sum / evaluable.length);
   }, [report, allFindings]);
 
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
-      return f.status === filterStatus;
+      const status = getEffectiveStatus(f);
+      return status === filterStatus;
     });
 
     return [...filtered].sort((a, b) => {
@@ -186,14 +222,14 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
       if (sortField === 'rule_id') {
         comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
-        comparison = (a.status || '').localeCompare(b.status || '');
+        comparison = getEffectiveStatus(a).localeCompare(getEffectiveStatus(b));
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [allFindings, filterStatus, sortField, sortDirection]);
 
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
+  const renderStatusBadge = (effectiveStatus: string) => {
+    switch (effectiveStatus) {
       case 'PASSED':
         return (
           <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
@@ -245,7 +281,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
             </select>
           </div>
 
-          {/* 2. Selector de Partición / VDOM (Condicional) */}
+          {/* 2. Selector de Partición / VDOM */}
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase mb-1 flex items-center justify-between">
               <span>Partición / VDOM</span>
@@ -264,7 +300,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                 ) : (
                   deviceVDOMs.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name} {v.is_root ? '★ [Admin Root]' : '• [Tráfico]'}
+                      {v.name} {v.is_root ? ' • [GLOBAL]' : ' • [Tráfico]'}
                     </option>
                   ))
                 )}
@@ -356,28 +392,36 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+          {/* Tarjetas de Métricas Completas (5 columnas) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200">
-              Aprobadas: {report.total_passed ?? allFindings.filter((f) => f.status === 'PASSED').length}
+              Aprobadas: {countPassed}
+            </div>
+            <div className="p-3 bg-amber-50 text-amber-700 rounded-lg font-semibold border border-amber-200">
+              Parciales: {countPartial}
             </div>
             <div className="p-3 bg-red-50 text-red-700 rounded-lg font-semibold border border-red-200">
-              Fallidas: {report.total_failed ?? allFindings.filter((f) => f.status === 'FAILED').length}
+              Fallidas: {countFailed}
             </div>
-            <div className="p-3 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200">
+            <div className="p-3 bg-gray-100 text-gray-700 rounded-lg font-semibold border border-gray-300">
+              No Aplican: {countNotApplicable}
+            </div>
+            <div className="p-3 bg-blue-50 text-blue-700 rounded-lg font-semibold border border-blue-200">
               Evaluadas: {allFindings.length}
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
             <h4 className="text-sm font-bold text-gray-800">
               Detalle por Regla ({processedFindings.length})
             </h4>
-            <div className="flex gap-2 text-xs">
+            <div className="flex flex-wrap gap-1.5 text-xs">
               {[
                 { id: 'ALL', label: 'Todas' },
                 { id: 'PASSED', label: 'Aprobadas' },
                 { id: 'PARCIAL', label: 'Parciales' },
                 { id: 'FAILED', label: 'Fallidas' },
+                { id: 'NOT_APPLICABLE', label: 'No Aplican' },
               ].map((st) => (
                 <button
                   key={st.id}
@@ -385,7 +429,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                   className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
                     filterStatus === st.id
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
                   }`}
                 >
                   {st.label}
@@ -432,11 +476,12 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
+                  const effectiveStatus = getEffectiveStatus(finding);
                   const ruleCompliance =
                     finding.compliance_score ??
-                    (finding.status === 'PASSED'
+                    (effectiveStatus === 'PASSED'
                       ? 100
-                      : finding.status === 'PARTIAL'
+                      : effectiveStatus === 'PARCIAL'
                       ? 50
                       : 0);
 
@@ -469,7 +514,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                         </td>
 
                         <td className="px-4 py-3 align-top">
-                          {renderStatusBadge(finding.status)}
+                          {renderStatusBadge(effectiveStatus)}
                         </td>
 
                         <td className="px-4 py-3 align-top">
@@ -477,12 +522,16 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                             className={`font-mono text-xs font-bold ${
                               ruleCompliance === 100
                                 ? 'text-green-700'
-                                : ruleCompliance >= 50
+                                : ruleCompliance >= 35
                                 ? 'text-amber-600'
+                                : ruleCompliance > 0
+                                ? 'text-amber-600'
+                                : effectiveStatus === 'NOT_APPLICABLE'
+                                ? 'text-gray-500'
                                 : 'text-red-600'
                             }`}
                           >
-                            {ruleCompliance}%
+                            {effectiveStatus === 'NOT_APPLICABLE' ? 'N/A' : `${ruleCompliance}%`}
                           </span>
                         </td>
 
@@ -507,7 +556,7 @@ export const AuditRunner: React.FC<AuditRunnerProps> = ({
                         </td>
 
                         <td className="px-4 py-3 align-top text-right">
-                          {finding.status !== 'PASSED' && finding.remediation_cmd && (
+                          {effectiveStatus !== 'PASSED' && effectiveStatus !== 'NOT_APPLICABLE' && finding.remediation_cmd && (
                             <button
                               onClick={() => toggleRowAccordion(rowKey, 'remediation')}
                               className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${

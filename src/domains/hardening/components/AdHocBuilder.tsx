@@ -31,7 +31,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRules, setSelectedRules] = useState<RuleCatalogItem[]>([]);
 
-  // Referencia para invocar el input de tipo archivo nativo
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estados para resultados y errores
@@ -92,7 +91,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     }
   }, [selectedDevice, currentDeviceObj]);
 
-  // Manejo de carga de archivo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
@@ -115,7 +113,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Reglas disponibles filtradas
   const availableRules = useMemo(() => {
     if (selectedRules.length === 0) return catalogRules;
     const selectedIds = new Set(
@@ -126,7 +123,6 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
       .sort((a, b) => compareRuleIds(a.id, b.id));
   }, [catalogRules, selectedRules]);
 
-  // Agrupación por estándar
   const groupedAvailableRules = useMemo(() => {
     const groups: Record<string, RuleCatalogItem[]> = {};
     availableRules.forEach((rule) => {
@@ -173,7 +169,19 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Ejecución unificada de la auditoría Ad-hoc
+  // Helper para resolver el estado efectivo considerando porcentajes intermedios
+  const getEffectiveStatus = (finding: Finding): string => {
+    if (finding.status === FindingStatus.NOT_APPLICABLE) return 'NOT_APPLICABLE';
+    if (finding.status === FindingStatus.PASSED) return 'PASSED';
+    if (finding.status === FindingStatus.PARTIAL) return 'PARCIAL';
+
+    const score = finding.compliance_score;
+    if (score !== undefined && score !== null && score > 0 && score < 100) {
+      return 'PARCIAL';
+    }
+    return 'FAILED';
+  };
+
   const handleRunAdHocAudit = async () => {
     if ((!selectedDevice && !selectedFile) || selectedRules.length === 0) return;
     setLocalError(null);
@@ -254,22 +262,45 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
   const activeError = localError || hookError;
   const allFindings = useMemo(() => report?.findings || [], [report]);
 
+  // Contadores normalizados
+  const countPassed = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PASSED').length;
+  }, [report, allFindings]);
+
+  const countPartial = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'PARCIAL').length;
+  }, [report, allFindings]);
+
+  const countFailed = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'FAILED').length;
+  }, [report, allFindings]);
+
+  const countNotApplicable = useMemo(() => {
+    if (!report) return 0;
+    return allFindings.filter((f) => getEffectiveStatus(f) === 'NOT_APPLICABLE').length;
+  }, [report, allFindings]);
+
   const totalComplianceScore = useMemo(() => {
     if (!report) return 0;
     if (typeof report.score === 'number') {
       return Math.round(report.score);
     }
-    // Excluir reglas NOT_APPLICABLE para no falsear el denominador
-    const applicableFindings = allFindings.filter((f) => f.status !== FindingStatus.NOT_APPLICABLE);
-    if (applicableFindings.length === 0) return 0;
-    const passed = applicableFindings.filter((f) => f.status === FindingStatus.PASSED).length;
-    return Math.round((passed / applicableFindings.length) * 100);
+    const evaluable = allFindings.filter((f) => getEffectiveStatus(f) !== 'NOT_APPLICABLE');
+    if (evaluable.length === 0) return 100;
+    const sum = evaluable.reduce((acc, f) => {
+      const s = f.compliance_score ?? (getEffectiveStatus(f) === 'PASSED' ? 100 : getEffectiveStatus(f) === 'PARCIAL' ? 50 : 0);
+      return acc + s;
+    }, 0);
+    return Math.round(sum / evaluable.length);
   }, [report, allFindings]);
 
   const processedFindings = useMemo(() => {
     const filtered = allFindings.filter((f) => {
       if (filterStatus === 'ALL') return true;
-      return f.status === filterStatus;
+      return getEffectiveStatus(f) === filterStatus;
     });
 
     return [...filtered].sort((a, b) => {
@@ -277,11 +308,40 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
       if (sortField === 'rule_id') {
         comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (sortField === 'status') {
-        comparison = (a.status || '').localeCompare(b.status || '');
+        comparison = getEffectiveStatus(a).localeCompare(getEffectiveStatus(b));
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [allFindings, filterStatus, sortField, sortDirection]);
+
+  const renderStatusBadge = (effectiveStatus: string) => {
+    switch (effectiveStatus) {
+      case 'PASSED':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+            PASSED
+          </span>
+        );
+      case 'PARCIAL':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            PARCIAL
+          </span>
+        );
+      case 'NOT_APPLICABLE':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-700 border border-gray-300">
+            N/A
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800 border border-red-300">
+            FAILED
+          </span>
+        );
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -327,7 +387,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                 ) : (
                   deviceVDOMs.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name} {v.is_root ? '★ [Admin Root]' : '• [Tráfico]'}
+                      {v.name} {v.is_root ? ' • [GLOBAL]' : ' • [Tráfico]'}
                     </option>
                   ))
                 )}
@@ -509,7 +569,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                           </span>
                           {rule.scope && (
                             <span
-                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                                 rule.scope === RuleScope.GLOBAL
                                   ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                   : 'bg-purple-50 text-purple-700 border border-purple-200'
@@ -570,38 +630,36 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+          {/* Tarjetas de Métricas Completas (5 columnas) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200">
-              Aprobadas:{' '}
-              {report.total_passed ??
-                allFindings.filter((f) => f.status === FindingStatus.PASSED).length}
+              Aprobadas: {countPassed}
+            </div>
+            <div className="p-3 bg-amber-50 text-amber-700 rounded-lg font-semibold border border-amber-200">
+              Parciales: {countPartial}
             </div>
             <div className="p-3 bg-red-50 text-red-700 rounded-lg font-semibold border border-red-200">
-              Fallidas:{' '}
-              {report.total_failed ??
-                allFindings.filter((f) => f.status === FindingStatus.FAILED).length}
+              Fallidas: {countFailed}
             </div>
-            <div className="p-3 bg-slate-100 text-slate-700 rounded-lg font-semibold border border-slate-300">
-              No Aplica (N/A):{' '}
-              {report.total_not_applicable ??
-                allFindings.filter((f) => f.status === FindingStatus.NOT_APPLICABLE).length}
+            <div className="p-3 bg-gray-100 text-gray-700 rounded-lg font-semibold border border-gray-300">
+              No Aplican: {countNotApplicable}
             </div>
-            <div className="p-3 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200">
+            <div className="p-3 bg-blue-50 text-blue-700 rounded-lg font-semibold border border-blue-200">
               Evaluadas: {allFindings.length}
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
             <h4 className="text-sm font-bold text-gray-800">
               Detalle por Regla ({processedFindings.length})
             </h4>
-            <div className="flex flex-wrap gap-2 text-xs">
+            <div className="flex flex-wrap gap-1.5 text-xs">
               {[
                 { key: 'ALL', label: 'Todas' },
-                { key: FindingStatus.PASSED, label: 'Pasaron' },
-                { key: FindingStatus.PARTIAL, label: 'Parciales' },
-                { key: FindingStatus.FAILED, label: 'Fallaron' },
-                { key: FindingStatus.NOT_APPLICABLE, label: 'No Aplica' },
+                { key: 'PASSED', label: 'Aprobadas' },
+                { key: 'PARTIAL', label: 'Parciales' },
+                { key: 'FAILED', label: 'Fallidas' },
+                { key: 'NOT_APPLICABLE', label: 'No Aplican' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -609,7 +667,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                   className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
                     filterStatus === key
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
                   }`}
                 >
                   {label}
@@ -656,13 +714,14 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {processedFindings.map((finding: Finding, idx: number) => {
-                  const isPassed = finding.status === FindingStatus.PASSED;
-                  const isPartial = finding.status === FindingStatus.PARTIAL;
-                  const isNotApplicable = finding.status === FindingStatus.NOT_APPLICABLE;
-
+                  const effectiveStatus = getEffectiveStatus(finding);
                   const ruleCompliance =
                     finding.compliance_score ??
-                    (isPassed ? 100 : isPartial ? 50 : 0);
+                    (effectiveStatus === 'PASSED'
+                      ? 100
+                      : effectiveStatus === 'PARTIAL'
+                      ? 50
+                      : 0);
 
                   const matchedRule = catalogRules.find(
                     (r) => r.id === finding.rule_id
@@ -703,34 +762,22 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                         </td>
 
                         <td className="px-4 py-3 align-top">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
-                              isPassed
-                                ? 'bg-green-100 text-green-800 border border-green-300'
-                                : isPartial
-                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                : isNotApplicable
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                : 'bg-red-100 text-red-800 border border-red-300'
-                            }`}
-                          >
-                            {isNotApplicable ? 'NOT APPLICABLE' : finding.status}
-                          </span>
+                          {renderStatusBadge(effectiveStatus)}
                         </td>
 
                         <td className="px-4 py-3 align-top">
                           <span
                             className={`font-mono text-xs font-bold ${
-                              isNotApplicable
+                              effectiveStatus === 'NOT_APPLICABLE'
                                 ? 'text-slate-500'
                                 : ruleCompliance === 100
                                 ? 'text-green-700'
-                                : ruleCompliance > 0
+                                : ruleCompliance >= 35 || ruleCompliance > 0
                                 ? 'text-amber-600'
                                 : 'text-red-600'
                             }`}
                           >
-                            {isNotApplicable ? 'N/A' : `${ruleCompliance}%`}
+                            {effectiveStatus === 'NOT_APPLICABLE' ? 'N/A' : `${ruleCompliance}%`}
                           </span>
                         </td>
 
@@ -741,13 +788,14 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                             )
                           }
                           className="px-4 py-3 align-top font-mono text-xs text-gray-800 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar la evidencia completa"
                         >
                           <div
                             className={
                               expandedCell === currentCellId ? '' : 'line-clamp-3'
                             }
                           >
-                            {finding.current_value || (isNotApplicable ? 'Regla de Chasis omitida para esta VDOM' : 'N/A')}
+                            {finding.current_value || (effectiveStatus === 'NOT_APPLICABLE' ? 'Regla de Chasis omitida para esta VDOM' : 'N/A')}
                           </div>
                         </td>
 
@@ -758,18 +806,19 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                             )
                           }
                           className="px-4 py-3 align-top font-mono text-xs text-gray-500 max-w-xs break-words whitespace-pre-wrap cursor-pointer hover:bg-gray-100/60 transition-colors"
+                          title="Haz clic para mostrar u ocultar el valor esperado"
                         >
                           <div
                             className={
                               expandedCell === expectedCellId ? '' : 'line-clamp-3'
                             }
                           >
-                            {finding.expected_value || (isNotApplicable ? 'N/A' : 'N/A')}
+                            {finding.expected_value || 'N/A'}
                           </div>
                         </td>
 
                         <td className="px-4 py-3 align-top text-right">
-                          {!isPassed && !isNotApplicable && finding.remediation_cmd && (
+                          {effectiveStatus !== 'PASSED' && effectiveStatus !== 'NOT_APPLICABLE' && finding.remediation_cmd && (
                             <button
                               onClick={() =>
                                 toggleRowAccordion(rowKey, 'remediation')
@@ -807,7 +856,7 @@ export const AdHocBuilder: React.FC<AdHocBuilderProps> = ({
                                   >
                                     Detalle del Control
                                   </button>
-                                  {finding.remediation_cmd && !isNotApplicable && (
+                                  {finding.remediation_cmd && effectiveStatus !== 'NOT_APPLICABLE' && (
                                     <button
                                       onClick={() =>
                                         toggleRowAccordion(rowKey, 'remediation')

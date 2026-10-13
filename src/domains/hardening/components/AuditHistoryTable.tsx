@@ -1,11 +1,12 @@
 // src/domains/hardening/components/AuditHistoryTable.tsx
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import type { AuditReportListItem, AuditReport, ExportFormat } from '../hardening.types';
-import { FindingStatus } from '../hardening.types';
+import type { AuditReportListItem, AuditReport, Finding, ExportFormat } from '../hardening.types';
+import { FindingStatus, RuleScope } from '../hardening.types';
 import { hardeningService } from '../hardeningService';
 import { useHardening } from '../useHardening';
 import { parseApiError } from '../../../shared/utils/errorHandler';
+import { compareRuleIds } from '../ruleOrdering';
 
 interface AuditHistoryTableProps {
   onSelectReport?: (report: AuditReport) => void;
@@ -25,6 +26,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
 
   const [selectedReport, setSelectedReport] = useState<AuditReport | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
   // Control de acordeón desplegable en línea por fila
   const [expandedRows, setExpandedRows] = useState<Record<string, ExpandedTab | null>>({});
@@ -77,7 +79,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
     fetchHistory();
   }, [fetchHistory]);
 
-  // Cierre del modal contenedor con la tecla Escape
+  // Cierre del modal con tecla Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedReport) {
@@ -88,29 +90,36 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedReport]);
 
-  const handleViewDetails = useCallback(async (reportId: string) => {
-    try {
-      setLoadingDetailId(reportId);
-      const detail = await hardeningService.getAuditReportById(reportId);
-      setExpandedCell(null);
-      setExpandedRows({});
-      if (onSelectReport) {
-        onSelectReport(detail);
-      } else {
-        setSelectedReport(detail);
+  const handleViewDetails = useCallback(
+    async (reportId: string) => {
+      try {
+        setLoadingDetailId(reportId);
+        const detail = await hardeningService.getAuditReportById(reportId);
+        setExpandedCell(null);
+        setExpandedRows({});
+        setFilterStatus('ALL');
+        if (onSelectReport) {
+          onSelectReport(detail);
+        } else {
+          setSelectedReport(detail);
+        }
+      } catch (err: unknown) {
+        const parsed = parseApiError(err);
+        alert(`No se pudo cargar el detalle: ${parsed.message}`);
+      } finally {
+        setLoadingDetailId(null);
       }
-    } catch (err: unknown) {
-      const parsed = parseApiError(err);
-      alert(`No se pudo cargar el detalle: ${parsed.message}`);
-    } finally {
-      setLoadingDetailId(null);
-    }
-  }, [onSelectReport]);
+    },
+    [onSelectReport]
+  );
 
-  const handleExport = useCallback(async (format: ExportFormat) => {
-    if (!selectedReport?.id) return;
-    await exportReport(selectedReport.id, format);
-  }, [exportReport, selectedReport]);
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      if (!selectedReport?.id) return;
+      await exportReport(selectedReport.id, format);
+    },
+    [exportReport, selectedReport]
+  );
 
   const handleMainSort = useCallback((field: MainSortField) => {
     setMainSortField((prevField) => {
@@ -132,6 +141,19 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
       setFindingSortDir('asc');
       return field;
     });
+  }, []);
+
+  // Helper para resolver el estado efectivo considerando porcentajes intermedios
+  const getEffectiveStatus = useCallback((finding: Finding): string => {
+    if (finding.status === FindingStatus.NOT_APPLICABLE) return 'NOT_APPLICABLE';
+    if (finding.status === FindingStatus.PASSED) return 'PASSED';
+    if (finding.status === FindingStatus.PARTIAL) return 'PARCIAL';
+
+    const score = finding.compliance_score;
+    if (score !== undefined && score !== null && score > 0 && score < 100) {
+      return 'PARCIAL';
+    }
+    return 'FAILED';
   }, []);
 
   const sortedReports = useMemo(() => {
@@ -156,23 +178,91 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
     });
   }, [reports, mainSortField, mainSortDir]);
 
-  const sortedFindings = useMemo(() => {
-    if (!selectedReport) return [];
-    const rawFindings = selectedReport.findings || [];
+  // Hallazgos y estadísticas del reporte seleccionado
+  const selectedFindings = useMemo(() => selectedReport?.findings || [], [selectedReport]);
 
-    return [...rawFindings].sort((a, b) => {
+  const countPassed = useMemo(
+    () => selectedFindings.filter((f) => getEffectiveStatus(f) === 'PASSED').length,
+    [selectedFindings, getEffectiveStatus]
+  );
+
+  const countPartial = useMemo(
+    () => selectedFindings.filter((f) => getEffectiveStatus(f) === 'PARCIAL').length,
+    [selectedFindings, getEffectiveStatus]
+  );
+
+  const countFailed = useMemo(
+    () => selectedFindings.filter((f) => getEffectiveStatus(f) === 'FAILED').length,
+    [selectedFindings, getEffectiveStatus]
+  );
+
+  const countNotApplicable = useMemo(
+    () => selectedFindings.filter((f) => getEffectiveStatus(f) === 'NOT_APPLICABLE').length,
+    [selectedFindings, getEffectiveStatus]
+  );
+
+  const totalComplianceScore = useMemo(() => {
+    if (!selectedReport) return 0;
+    if (typeof selectedReport.score === 'number') {
+      return Math.round(selectedReport.score);
+    }
+    const evaluable = selectedFindings.filter((f) => getEffectiveStatus(f) !== 'NOT_APPLICABLE');
+    if (evaluable.length === 0) return 100;
+    const sum = evaluable.reduce((acc, f) => {
+      const s =
+        f.compliance_score ??
+        (getEffectiveStatus(f) === 'PASSED' ? 100 : getEffectiveStatus(f) === 'PARCIAL' ? 50 : 0);
+      return acc + s;
+    }, 0);
+    return Math.round(sum / evaluable.length);
+  }, [selectedReport, selectedFindings, getEffectiveStatus]);
+
+  const processedFindings = useMemo(() => {
+    if (!selectedReport) return [];
+    const filtered = selectedFindings.filter((f) => {
+      if (filterStatus === 'ALL') return true;
+      return getEffectiveStatus(f) === filterStatus;
+    });
+
+    return [...filtered].sort((a, b) => {
       let comparison = 0;
       if (findingSortField === 'rule_id') {
-        comparison = (a.rule_id || '').localeCompare(b.rule_id || '', undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        });
+        comparison = compareRuleIds(a.rule_id, b.rule_id);
       } else if (findingSortField === 'status') {
-        comparison = (a.status || '').localeCompare(b.status || '');
+        comparison = getEffectiveStatus(a).localeCompare(getEffectiveStatus(b));
       }
       return findingSortDir === 'asc' ? comparison : -comparison;
     });
-  }, [selectedReport, findingSortField, findingSortDir]);
+  }, [selectedReport, selectedFindings, filterStatus, findingSortField, findingSortDir, getEffectiveStatus]);
+
+  const renderStatusBadge = (effectiveStatus: string) => {
+    switch (effectiveStatus) {
+      case 'PASSED':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+            PASSED
+          </span>
+        );
+      case 'PARCIAL':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            PARCIAL
+          </span>
+        );
+      case 'NOT_APPLICABLE':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-700 border border-gray-300">
+            N/A
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800 border border-red-300">
+            FAILED
+          </span>
+        );
+    }
+  };
 
   if (loading) {
     return (
@@ -249,6 +339,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   )}
                 </div>
               </th>
+              <th className="px-4 py-3 text-center">Parciales</th>
               <th
                 onClick={() => handleMainSort('total_failed')}
                 className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100 transition-colors"
@@ -260,6 +351,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   )}
                 </div>
               </th>
+              <th className="px-4 py-3 text-center">No Aplica</th>
               <th
                 onClick={() => handleMainSort('score')}
                 className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100 transition-colors"
@@ -277,7 +369,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
           <tbody className="divide-y divide-gray-200">
             {sortedReports.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400 italic">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400 italic">
                   No se registran auditorías guardadas aún.
                 </td>
               </tr>
@@ -305,8 +397,14 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                   <td className="px-4 py-3 align-middle text-center font-bold text-green-600">
                     {item.total_passed ?? 0}
                   </td>
+                  <td className="px-4 py-3 align-middle text-center font-bold text-amber-600">
+                    {item.total_partial ?? 0}
+                  </td>
                   <td className="px-4 py-3 align-middle text-center font-bold text-red-600">
                     {item.total_failed ?? 0}
+                  </td>
+                  <td className="px-4 py-3 align-middle text-center font-bold text-gray-500">
+                    {item.total_not_applicable ?? 0}
                   </td>
                   <td className="px-4 py-3 align-middle text-center">
                     <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
@@ -372,21 +470,54 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
             </div>
 
             <div className="p-6 overflow-y-auto space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-center">
-                <div className="p-2.5 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200 text-sm">
-                  Aprobadas: {selectedReport.total_passed ?? 0}
+              {/* Tarjetas de Métricas en 5 columnas */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
+                <div className="p-3 bg-green-50 text-green-700 rounded-lg font-semibold border border-green-200">
+                  Aprobadas: {countPassed}
                 </div>
-                <div className="p-2.5 bg-red-50 text-red-700 rounded-lg font-semibold border border-red-200 text-sm">
-                  Fallidas: {selectedReport.total_failed ?? 0}
+                <div className="p-3 bg-amber-50 text-amber-700 rounded-lg font-semibold border border-amber-200">
+                  Parciales: {countPartial}
                 </div>
-                <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg font-semibold border border-blue-200 text-sm">
-                  Cumplimiento Total: {selectedReport.score !== undefined && selectedReport.score !== null ? `${Math.round(selectedReport.score)}%` : '0%'}
+                <div className="p-3 bg-red-50 text-red-700 rounded-lg font-semibold border border-red-200">
+                  Fallidas: {countFailed}
                 </div>
-                <div className="p-2.5 bg-gray-50 text-gray-700 rounded-lg font-semibold border border-gray-200 text-sm">
-                  Evaluadas: {selectedReport.total_not_applicable !== undefined ? sortedFindings.length : sortedFindings.length}
+                <div className="p-3 bg-gray-100 text-gray-700 rounded-lg font-semibold border border-gray-300">
+                  No Aplican: {countNotApplicable}
+                </div>
+                <div className="p-3 bg-blue-50 text-blue-700 rounded-lg font-semibold border border-blue-200">
+                  Evaluadas: {selectedFindings.length}
                 </div>
               </div>
 
+              {/* Filtros de la tabla en el modal */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
+                <h4 className="text-sm font-bold text-gray-800">
+                  Detalle por Regla ({processedFindings.length})
+                </h4>
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  {[
+                    { id: 'ALL', label: 'Todas' },
+                    { id: 'PASSED', label: 'Aprobadas' },
+                    { id: 'PARCIAL', label: 'Parciales' },
+                    { id: 'FAILED', label: 'Fallidas' },
+                    { id: 'NOT_APPLICABLE', label: 'No Aplican' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => setFilterStatus(st.id)}
+                      className={`px-3 py-1 rounded-md font-medium border cursor-pointer transition-colors ${
+                        filterStatus === st.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tabla de hallazgos */}
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full text-left text-sm text-gray-600 border-collapse">
                   <thead className="bg-gray-50 text-xs text-gray-700 uppercase border-b select-none">
@@ -424,11 +555,12 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {sortedFindings.map((f, idx) => {
-                      const isPassed = f.status === FindingStatus.PASSED;
-                      const isPartial = f.status === FindingStatus.PARTIAL;
-                      const ruleCompliance = f.compliance_score ?? (isPassed ? 100 : isPartial ? 50 : 0);
-                      
+                    {processedFindings.map((f, idx) => {
+                      const effectiveStatus = getEffectiveStatus(f);
+                      const ruleCompliance =
+                        f.compliance_score ??
+                        (effectiveStatus === 'PASSED' ? 100 : effectiveStatus === 'PARCIAL' ? 50 : 0);
+
                       const currentCellId = `current-${idx}`;
                       const expectedCellId = `expected-${idx}`;
 
@@ -462,33 +594,25 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                               </button>
                             </td>
 
-                            {/* Estado con soporte PARCIAL / PASSED / FAILED */}
+                            {/* Estado con soporte PARCIAL / PASSED / FAILED / N/A */}
                             <td className="px-4 py-2.5 align-top">
-                              <span
-                                className={`px-2 py-0.5 rounded text-[11px] font-bold inline-block ${
-                                  isPassed
-                                    ? 'bg-green-100 text-green-800 border border-green-200'
-                                    : isPartial
-                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                      : 'bg-red-100 text-red-800 border border-red-200'
-                                }`}
-                              >
-                                {f.status}
-                              </span>
+                              {renderStatusBadge(effectiveStatus)}
                             </td>
 
                             {/* Cumplimiento */}
                             <td className="px-4 py-2.5 align-top text-center">
                               <span
                                 className={`font-mono text-xs font-bold ${
-                                  ruleCompliance === 100
+                                  effectiveStatus === 'NOT_APPLICABLE'
+                                    ? 'text-slate-500'
+                                    : ruleCompliance === 100
                                     ? 'text-green-700'
-                                    : ruleCompliance > 0
-                                      ? 'text-amber-600'
-                                      : 'text-red-600'
+                                    : ruleCompliance >= 35 || ruleCompliance > 0
+                                    ? 'text-amber-600'
+                                    : 'text-red-600'
                                 }`}
                               >
-                                {Math.round(ruleCompliance)}%
+                                {effectiveStatus === 'NOT_APPLICABLE' ? 'N/A' : `${Math.round(ruleCompliance)}%`}
                               </span>
                             </td>
 
@@ -499,7 +623,10 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                               title="Haz clic para alternar vista completa"
                             >
                               <div className={isCurrentExpanded ? '' : 'line-clamp-3'}>
-                                {f.current_value || 'N/A'}
+                                {f.current_value ||
+                                  (effectiveStatus === 'NOT_APPLICABLE'
+                                    ? 'Regla de Chasis omitida para esta VDOM'
+                                    : 'N/A')}
                               </div>
                             </td>
 
@@ -516,25 +643,27 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
 
                             {/* Botón remediación en línea */}
                             <td className="px-4 py-2.5 align-top text-right whitespace-nowrap">
-                              {!isPassed && f.remediation_cmd && (
-                                <button
-                                  onClick={() => toggleRowAccordion(rowKey, 'remediation')}
-                                  className={`px-2.5 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
-                                    activeTab === 'remediation'
-                                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                                      : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
-                                  }`}
-                                >
-                                  <span>Remediación</span>
-                                  <span className="text-xs">
-                                    {activeTab === 'remediation' ? '▲' : '▼'}
-                                  </span>
-                                </button>
-                              )}
+                              {effectiveStatus !== 'PASSED' &&
+                                effectiveStatus !== 'NOT_APPLICABLE' &&
+                                f.remediation_cmd && (
+                                  <button
+                                    onClick={() => toggleRowAccordion(rowKey, 'remediation')}
+                                    className={`px-2.5 py-1 text-xs font-semibold rounded border cursor-pointer transition-all flex items-center gap-1 ml-auto ${
+                                      activeTab === 'remediation'
+                                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                                        : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    <span>Remediación</span>
+                                    <span className="text-xs">
+                                      {activeTab === 'remediation' ? '▲' : '▼'}
+                                    </span>
+                                  </button>
+                                )}
                             </td>
                           </tr>
 
-                          {/* ACORDEÓN DESPLEGABLE EN LÍNEA */}
+                          {/* Acordeón desplegable en línea */}
                           {activeTab && (
                             <tr className="bg-slate-50/80 border-b border-gray-200">
                               <td colSpan={6} className="px-6 py-4">
@@ -551,7 +680,7 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                                       >
                                         Detalle del Control
                                       </button>
-                                      {f.remediation_cmd && (
+                                      {f.remediation_cmd && effectiveStatus !== 'NOT_APPLICABLE' && (
                                         <button
                                           onClick={() => toggleRowAccordion(rowKey, 'remediation')}
                                           className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
@@ -573,7 +702,6 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                                     </button>
                                   </div>
 
-                                  {/* Contenido: DETALLE DEL CONTROL */}
                                   {activeTab === 'details' && (
                                     <div className="space-y-3 text-xs">
                                       <div className="flex items-center gap-3">
@@ -581,6 +709,17 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                                           {f.rule_id}
                                         </span>
                                         <h5 className="font-bold text-gray-900 text-sm">{ruleName}</h5>
+                                        {matchedRule?.scope && (
+                                          <span
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                              matchedRule.scope === RuleScope.GLOBAL
+                                                ? 'bg-amber-100 text-amber-800'
+                                                : 'bg-purple-100 text-purple-800'
+                                            }`}
+                                          >
+                                            Ámbito: {matchedRule.scope}
+                                          </span>
+                                        )}
                                         <span className="ml-auto uppercase text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
                                           Severidad: {ruleSeverity}
                                         </span>
@@ -597,7 +736,6 @@ export const AuditHistoryTable: React.FC<AuditHistoryTableProps> = ({ onSelectRe
                                     </div>
                                   )}
 
-                                  {/* Contenido: COMANDOS CLI DE REMEDIACIÓN */}
                                   {activeTab === 'remediation' && f.remediation_cmd && (
                                     <div className="space-y-3">
                                       <div className="flex items-center justify-between">

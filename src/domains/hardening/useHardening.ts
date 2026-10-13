@@ -79,7 +79,7 @@ export const useHardening = (initialStandardVersion?: string) => {
         const fallbackScore =
           finding.status === 'PASSED'
             ? 100
-            : finding.status === 'PARCIAL'
+            : finding.status === 'PARTIAL'
               ? 50
               : 0;
 

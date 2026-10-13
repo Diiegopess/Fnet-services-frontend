@@ -93,6 +93,7 @@ export interface AuditReport {
   standard_version?: string;
   score: number;
   total_passed: number;
+  total_partial?: number;
   total_failed: number;
   total_not_applicable?: number;
   executed_at?: string;
@@ -109,6 +110,7 @@ export interface AuditReportListItem {
   profile_name?: string;
   score: number;
   total_passed: number;
+  total_partial?: number;
   total_failed: number;
   total_not_applicable?: number;
   executed_at?: string;
